@@ -86,4 +86,7 @@ async function answer(a: { cancel: true } | { keyId: string; password: string })
   return r;
 }
 
+// MV3 усыпляет service worker через 30 с без событий — держим его, пока окно открыто
+setInterval(() => void chrome.runtime.sendMessage({ type: "confirm.ping", token }).catch(() => {}), 20_000);
+
 void main();
