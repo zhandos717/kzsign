@@ -1,6 +1,6 @@
 import type { KeyMeta } from "../sw/keystore";
 import type { Mode } from "../sw/policy";
-import { el, icon, topbar, initials, validity, fileDrop } from "./dom";
+import { el, icon, topbar, initials, validity, fileDrop, passwordField } from "./dom";
 
 type Reply<T> = T & { error?: string; retryAfterSec?: number };
 const send = <T>(msg: object) => chrome.runtime.sendMessage(msg) as Promise<Reply<T>>;
@@ -69,14 +69,15 @@ function keysTab(keys: KeyMeta[]) {
     : el("div", { className: "empty" }, icon("key"), el("p", { textContent: "Ключей пока нет. Добавьте файл .p12 от НУЦ РК." }));
 
   const drop = fileDrop("Файл ключа .p12", ".p12,.pfx");
-  const pass = el("input", { className: "input", type: "password", autocomplete: "off" });
+  const passField = passwordField();
+  const pass = passField.input;
   const alias = el("input", { className: "input", type: "text", placeholder: "Например: Рабочий" });
   const status = el("p", { className: "error", role: "alert" });
   const submit = el("button", { type: "submit", className: "btn block", textContent: "Добавить" });
   const form = el("form", { className: "card" },
     el("h2", { textContent: "Добавить ключ" }),
     el("div", { style: "display:grid;gap:10px" }, drop.root,
-      el("label", { className: "field" }, el("span", { textContent: "Пароль ключа" }), pass),
+      el("div", { className: "field" }, el("span", { textContent: "Пароль ключа" }), passField.root),
       el("label", { className: "field" }, el("span", { textContent: "Название (необязательно)" }), alias),
       status, submit),
     el("p", { className: "muted small", textContent: "Ключ хранится в браузере в зашифрованном виде. Пароль не сохраняется." }));
@@ -105,7 +106,8 @@ function signTab(keys: KeyMeta[]) {
   if (!keys.length) return [el("div", { className: "card empty" }, icon("key"), el("p", { textContent: "Сначала добавьте ключ на вкладке «Ключи»." }))];
   const drop = fileDrop("Файл для подписи");
   const keySel = el("select", { className: "input" }, ...keys.map((k) => el("option", { value: k.id, textContent: `${k.alias}${k.iin ? " · ИИН " + k.iin : ""}` })));
-  const pass = el("input", { className: "input", type: "password", autocomplete: "off", placeholder: "Не нужен, если ключ открыт" });
+  const passField = passwordField({ placeholder: "Не нужен, если ключ открыт" });
+  const pass = passField.input;
   const detached = el("input", { type: "checkbox" });
   const status = el("p", { className: "error", role: "alert" });
   const done = el("div");
@@ -114,7 +116,7 @@ function signTab(keys: KeyMeta[]) {
     el("h2", { textContent: "Подписать файл" }),
     el("div", { style: "display:grid;gap:10px" }, drop.root,
       el("label", { className: "field" }, el("span", { textContent: "Ключ" }), keySel),
-      el("label", { className: "field" }, el("span", { textContent: "Пароль ключа" }), pass),
+      el("div", { className: "field" }, el("span", { textContent: "Пароль ключа" }), passField.root),
       el("label", { className: "check" }, detached, "Открепленная подпись (файл не включается в .cms)"),
       status, done, submit));
   form.onsubmit = async (e) => {

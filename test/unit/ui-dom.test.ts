@@ -17,3 +17,17 @@ it("el не интерпретирует HTML в тексте", () => {
   expect(e.children).toHaveLength(0);
   expect(e.textContent).toBe("<img src=x onerror=alert(1)>");
 });
+
+it("passwordField: кнопка-глаз переключает видимость и подпись кнопки", async () => {
+  const { passwordField } = await import("../../src/ui/dom");
+  const { root, input } = passwordField({ placeholder: "Пароль" });
+  const btn = root.querySelector("button")!;
+  expect(input.type).toBe("password");
+  expect(btn.getAttribute("aria-label")).toBe("Показать пароль");
+  expect(btn.type).toBe("button");
+  btn.click();
+  expect(input.type).toBe("text");
+  expect(btn.getAttribute("aria-label")).toBe("Скрыть пароль");
+  btn.click();
+  expect(input.type).toBe("password");
+});

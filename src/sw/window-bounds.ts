@@ -1,7 +1,7 @@
 export interface Bounds { left?: number; top?: number; width?: number; height?: number }
 
-const WIDTH = 400;
-const HEIGHT = 600;
+const WIDTH = 480;
+const HEIGHT = 680;
 const MARGIN_RIGHT = 16;
 // ниже строки вкладок и адресной строки, примерно там, где Chrome показывает свои всплывающие окна
 const OFFSET_TOP = 72;

@@ -142,3 +142,12 @@ details.hash code { display: block; margin-top: 4px; font: 11px/1.4 var(--mono);
 .confirm .pw .input { flex: 1; }
 [hidden] { display: none !important; }
 .confirm .pw:has(input[hidden]) .btn { flex: 1; }
+
+/* поле пароля с кнопкой-глазом */
+.pwfield { position: relative; flex: 1; }
+.pwfield .input { padding-right: 40px; }
+.pwfield .eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: 0; background: none; padding: 6px; border-radius: 6px; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+.pwfield .eye:hover { color: var(--fg); background: var(--surface-2); }
+.pwfield .eye svg { width: 18px; height: 18px; }
+.confirm .preview { max-height: 230px; }
+.page > .content { align-content: start; }

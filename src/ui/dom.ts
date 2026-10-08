@@ -14,6 +14,8 @@ const PATHS = {
   trash: "M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Z",
   key: "M14 3a7 7 0 0 0-6.7 9L2 17.3V22h4.7l1-1v-2h2v-2h2l1.3-1.3A7 7 0 1 0 14 3Zm2 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z",
   file: "M6 2h8l6 6v14H6V2Zm7 1.5V9h5.5L13 3.5Z",
+  eye: "M12 5c5 0 9 4.5 10 7-1 2.5-5 7-10 7S3 14.5 2 12c1-2.5 5-7 10-7Zm0 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z",
+  eyeOff: "M3.3 2 22 20.7 20.7 22l-3.3-3.3A10.8 10.8 0 0 1 12 20c-5 0-9-4.5-10-7a14 14 0 0 1 4-5.3L2 3.3 3.3 2Zm5.2 7.9A4 4 0 0 0 14 15.5l-1.5-1.5a2 2 0 0 1-2.5-2.5L8.5 9.9ZM12 5c5 0 9 4.5 10 7a13.6 13.6 0 0 1-3.2 4.5l-2.9-2.9A4 4 0 0 0 10.4 8.1L8.2 6A10.6 10.6 0 0 1 12 5Z",
 } as const;
 
 export function icon(name: keyof typeof PATHS, className = ""): SVGSVGElement {
@@ -58,4 +60,19 @@ export function fileDrop(label: string, accept?: string): { root: HTMLLabelEleme
     hint.textContent = f ? `${(f.size / 1024).toFixed(1)} КБ · нажмите, чтобы заменить` : "Нажмите, чтобы выбрать";
   };
   return { root, input };
+}
+
+export function passwordField(props: Record<string, unknown> = {}): { root: HTMLElement; input: HTMLInputElement } {
+  const input = el("input", { className: "input", type: "password", autocomplete: "off", spellcheck: false, ...props });
+  const toggle = el("button", { type: "button", className: "eye", "aria-label": "Показать пароль", title: "Показать пароль" }, icon("eye"));
+  toggle.onclick = () => {
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    const label = show ? "Скрыть пароль" : "Показать пароль";
+    toggle.setAttribute("aria-label", label);
+    toggle.title = label;
+    toggle.replaceChildren(icon(show ? "eyeOff" : "eye"));
+    input.focus();
+  };
+  return { root: el("div", { className: "pwfield" }, input, toggle), input };
 }

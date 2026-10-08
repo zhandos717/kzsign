@@ -22,7 +22,7 @@ function showConfirm(url: unknown, runtime: typeof chrome.runtime, port: chrome.
   const root = host.attachShadow({ mode: "closed" });
   const frame = document.createElement("iframe");
   frame.src = u.href;
-  frame.setAttribute("style", important({ width: "400px", height: "600px", "max-width": "calc(100vw - 24px)", "max-height": "calc(100vh - 24px)", border: "0", "border-radius": "14px", "box-shadow": "0 18px 50px rgba(0,0,0,.35)", background: "#fff", opacity: "1", transform: "none", filter: "none" }));
+  frame.setAttribute("style", important({ width: "480px", height: "680px", "max-width": "calc(100vw - 24px)", "max-height": "calc(100vh - 24px)", border: "0", "border-radius": "14px", "box-shadow": "0 18px 50px rgba(0,0,0,.35)", background: "#fff", opacity: "1", transform: "none", filter: "none" }));
   frame.setAttribute("allow", "");
   root.append(frame);
   const parent = document.documentElement ?? document.body;

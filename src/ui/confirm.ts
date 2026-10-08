@@ -3,7 +3,7 @@ import type { KeyMeta } from "../sw/keystore";
 import { splitHost } from "./site";
 import { armAfterFocus } from "./arm";
 import { watchVisibility } from "./visibility";
-import { el, icon, topbar, initials, validity } from "./dom";
+import { el, icon, topbar, initials, validity, passwordField } from "./dom";
 
 const token = location.hash.slice(1);
 const inline = window.top !== window;
@@ -82,7 +82,8 @@ async function main() {
         el("b", { textContent: k.alias }),
         el("span", { className: "meta small muted" }, [k.iin && `ИИН ${k.iin}`, k.bin && `БИН ${k.bin}`].filter(Boolean).join(" · ") + " ", el("span", { className: `badge ${v.tone}`, textContent: v.label })))));
   });
-  const password = el("input", { className: "input", type: "password", name: "password", autocomplete: "off", required: true, placeholder: "Пароль ключа", "aria-label": "Пароль ключа" });
+  const pw = passwordField({ name: "password", required: true, placeholder: "Пароль ключа", "aria-label": "Пароль ключа" });
+  const password = pw.input;
   const status = el("p", { className: "error", role: "alert" });
   const openNote = el("div", { className: "note ok small", textContent: "Ключ открыт до закрытия браузера — пароль не нужен." });
   const pwHint = el("p", { className: "muted small", style: "margin:0", textContent: "После первой подписи пароль не понадобится до закрытия браузера." });
@@ -94,7 +95,7 @@ async function main() {
     el("div", { className: "footer stack" },
       keys.length === 1 && el("div", { className: "keyline" }, pick),
       openNote,
-      el("div", { className: "pw" }, password, submit),
+      el("div", { className: "pw" }, pw.root, submit),
       pwHint,
       status,
       el("div", { className: "actions" }, cancel)));
@@ -102,7 +103,7 @@ async function main() {
   const selectedKey = () => (form.elements.namedItem("key") as RadioNodeList | HTMLInputElement | null)?.value ?? "";
   const syncKeyState = () => {
     const isOpen = open.includes(selectedKey());
-    password.hidden = isOpen;
+    pw.root.hidden = isOpen;
     password.required = !isOpen;
     openNote.hidden = !isOpen;
     pwHint.hidden = isOpen;
