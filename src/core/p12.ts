@@ -20,7 +20,7 @@ const OID_GOST2004 = "1.2.398.3.10.1.1.1.1";
 const toBytes = (bin: string) => forge.util.binary.raw.decode(bin);
 const toBin = (b: Uint8Array) => forge.util.binary.raw.encode(b);
 const derOf = (a: forge.asn1.Asn1) => toBytes(forge.asn1.toDer(a).getBytes());
-const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
+const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 
 function isCertificate(der: Uint8Array): boolean {
   try {
