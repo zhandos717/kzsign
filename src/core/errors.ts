@@ -8,7 +8,8 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "CANCELED"
   | "TSP_FAILED"
-  | "NEED_PASSWORD";
+  | "NEED_PASSWORD"
+  | "MALFORMED_XML";
 
 export class KzSignError extends Error {
   constructor(
