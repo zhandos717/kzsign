@@ -11,6 +11,13 @@ describe("build", () => {
     }
   });
 
+  it("иконки из манифеста лежат в dist", () => {
+    const m = JSON.parse(readFileSync("dist/manifest.json", "utf8"));
+    const paths = [...Object.values(m.icons ?? {}), ...Object.values(m.action?.default_icon ?? {})] as string[];
+    expect(paths.length).toBeGreaterThanOrEqual(4);
+    for (const p of paths) expect(existsSync(`dist/${p}`), p).toBe(true);
+  });
+
   it("манифест с минимальными правами", () => {
     const m = JSON.parse(readFileSync("dist/manifest.json", "utf8"));
     expect(m.permissions).toEqual(["storage", "alarms"]);

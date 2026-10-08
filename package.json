@@ -11,7 +11,8 @@
     "test": "vitest run",
     "typecheck": "tsc",
     "build": "node esbuild.config.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "icons": "tsx scripts/render-icons.ts"
   },
   "keywords": [],
   "author": "",
