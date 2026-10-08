@@ -121,3 +121,15 @@ describe("router", () => {
     expect(p.posted.map((m: any) => m.text)).toEqual(["slow", "fast"]);
   });
 });
+
+describe("управляющие сообщения мосту", () => {
+  it("session.control уходит в порт как kind:control", () => {
+    let connect!: (p: unknown) => void;
+    const sessions: Session[] = [];
+    attachRouter({ addListener: (f: any) => { connect = f; } } as any, (s) => { sessions.push(s); return { onFrame: async () => null, onClose: () => {} }; });
+    const p = fakePort({ origin: "https://a.kz", frameId: 0 });
+    connect(p);
+    sessions[0]!.control({ action: "confirm-show", url: "chrome-extension://x/confirm.html#t" });
+    expect(p.posted).toEqual([{ kind: "control", action: "confirm-show", url: "chrome-extension://x/confirm.html#t" }]);
+  });
+});

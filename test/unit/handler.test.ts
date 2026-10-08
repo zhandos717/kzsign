@@ -22,7 +22,7 @@ const reject: ConfirmLike = { ask: vi.fn(async () => null) };
 
 function session(confirm: ConfirmLike, extra: Partial<Parameters<typeof createSessionFactory>[0]> = {}) {
   const pushed: string[] = [];
-  const s: Session = { origin: "https://a.kz", tabId: 1, frameId: 0, send: (t) => pushed.push(t) };
+  const s: Session = { origin: "https://a.kz", tabId: 1, frameId: 0, send: (t) => pushed.push(t), control: () => {} };
   const h = createSessionFactory({ keystore, confirm, getMode: async () => "extension", ...extra })(s);
   return { h, pushed };
 }

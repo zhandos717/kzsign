@@ -3,6 +3,8 @@ export interface Session {
   tabId: number;
   frameId: number;
   send(text: string): void;
+  /** управляющее сообщение мосту этой вкладки (показать/скрыть окно подтверждения) */
+  control(msg: Record<string, unknown>): void;
 }
 export interface SessionHandler {
   onFrame(text: string): Promise<string | null>;
@@ -38,7 +40,8 @@ export function attachRouter(onConnect: Pick<typeof chrome.runtime.onConnect, "a
 
     let alive = true;
     const post = (text: string) => { if (alive) port.postMessage({ kind: "message", text }); };
-    const handler = factory({ origin, tabId: port.sender?.tab?.id ?? -1, frameId: port.sender?.frameId ?? -1, send: post });
+    const control = (msg: Record<string, unknown>) => { if (alive) port.postMessage({ ...msg, kind: "control" }); };
+    const handler = factory({ origin, tabId: port.sender?.tab?.id ?? -1, frameId: port.sender?.frameId ?? -1, send: post, control });
     const close = () => {
       if (!alive) return;
       alive = false;

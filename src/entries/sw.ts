@@ -1,4 +1,4 @@
-import { attachRouter } from "../sw/router";
+import { attachRouter, type Session } from "../sw/router";
 import { createSessionFactory } from "../sw/handler";
 import { createKeystore } from "../sw/keystore";
 import { createConfirmManager, type Answer } from "../sw/confirm-manager";
@@ -9,7 +9,13 @@ import { handlePopupMessage } from "../sw/popup-actions";
 
 const storage = chromeStorage(chrome.storage.local);
 const keystore = createKeystore(storage);
-const confirm = createConfirmManager(chromeWindows());
+// Окно на странице — только в верхнем фрейме: во вложенном iframe его легко обрезать или спрятать
+const confirm = createConfirmManager(chromeWindows(), 120_000, async (url, session) => {
+  const s = session as Session | undefined;
+  if (!s || s.frameId !== 0) return null;
+  s.control({ action: "confirm-show", url: chrome.runtime.getURL(url) });
+  return { close: () => s.control({ action: "confirm-hide" }) };
+});
 const getMode = async () => ((await storage.get("kzsign.mode")) as Mode | undefined) ?? "auto";
 
 attachRouter(
@@ -22,6 +28,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (msg?.type?.startsWith("confirm.")) {
       if (!isOwnPage(sender, "confirm.html")) return { error: "FORBIDDEN" };
       if (msg.type === "confirm.ping") return { ok: true };
+      if (msg.type === "confirm.fallback") return confirm.fallback(String(msg.token)).then(() => ({ ok: true }));
       if (msg.type === "confirm.get") return { req: confirm.pending(msg.token), keys: await keystore.list() };
       if (msg.type === "confirm.answer") return confirm.answer(String(msg.token), msg.answer as Answer);
     }

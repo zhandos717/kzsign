@@ -29,7 +29,8 @@ export const chromeWindows = (): WindowsApi => ({
 
 export const openWebSocket = (url: string) => new WebSocket(url) as unknown as WebSocketLike;
 
-// Сообщения от страниц самого расширения (окно подтверждения, popup); content scripts сюда не допускаются
+// Сообщения от страниц самого расширения (окно подтверждения, в том числе в iframe на сайте, и popup).
+// У content scripts sender.url — адрес сайта, поэтому проверки URL достаточно, чтобы их не пустить
 export function isOwnPage(sender: chrome.runtime.MessageSender, page: string): boolean {
-  return sender.id === chrome.runtime.id && !sender.tab?.url?.startsWith("http") && (sender.url ?? "").startsWith(chrome.runtime.getURL(page));
+  return sender.id === chrome.runtime.id && (sender.url ?? "").startsWith(chrome.runtime.getURL(page));
 }

@@ -20,3 +20,22 @@ it("кнопка включается только через паузу пос�
   expect(b.disabled).toBe(false);
   vi.useRealTimers();
 });
+
+it("guard: таймер не включает кнопку, пока условие ложно; rearm после выполнения условия", () => {
+  vi.useFakeTimers();
+  const b = document.createElement("button");
+  let visible = false;
+  const gate = armAfterFocus(b, window, 1000, () => visible);
+  vi.advanceTimersByTime(2000);
+  expect(b.disabled).toBe(true);
+  visible = true;
+  gate.rearm();
+  vi.advanceTimersByTime(999);
+  expect(b.disabled).toBe(true);
+  vi.advanceTimersByTime(1);
+  expect(b.disabled).toBe(false);
+  visible = false;
+  gate.disarm();
+  expect(b.disabled).toBe(true);
+  vi.useRealTimers();
+});

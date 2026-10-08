@@ -2,9 +2,12 @@ import type { ConfirmRequest, AnswerResult } from "../sw/confirm-manager";
 import type { KeyMeta } from "../sw/keystore";
 import { splitHost } from "./site";
 import { armAfterFocus } from "./arm";
+import { watchVisibility } from "./visibility";
 import { el, icon, topbar, initials, validity } from "./dom";
 
 const token = location.hash.slice(1);
+const inline = window.top !== window;
+let visible = !inline;
 const app = document.getElementById("app")!;
 
 const ERRORS: Record<string, string> = {
@@ -90,16 +93,29 @@ async function main() {
       el("div", { className: "pw" }, password, submit),
       status,
       el("div", { className: "actions" }, cancel)));
-  armAfterFocus(submit, window);
+  const gate = armAfterFocus(submit, window, 1000, () => visible);
+  if (inline) {
+    watchVisibility(
+      form,
+      (v) => {
+        if (v === visible) return;
+        visible = v;
+        if (v) gate.rearm();
+        else gate.disarm();
+      },
+      () => void chrome.runtime.sendMessage({ type: "confirm.fallback", token }),
+    );
+  }
   form.onsubmit = async (e) => {
     e.preventDefault();
+    if (!visible || submit.disabled) return;
     submit.disabled = true;
     status.textContent = "";
     const keyId = (form.elements.namedItem("key") as RadioNodeList).value;
     const r = await answer({ keyId, password: password.value });
     if (r.ok) return;
     password.value = "";
-    armAfterFocus(submit, window);
+    gate.rearm();
     status.textContent = (ERRORS[r.code] ?? r.code).replace("{s}", String(r.retryAfterSec ?? ""));
   };
   app.replaceChildren(form);
@@ -110,6 +126,10 @@ async function answer(a: { cancel: true } | { keyId: string; password: string })
   if (r.ok) window.close();
   return r;
 }
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") void answer({ cancel: true });
+});
 
 // MV3 усыпляет service worker через 30 с без событий — держим его, пока окно открыто
 setInterval(() => void chrome.runtime.sendMessage({ type: "confirm.ping", token }).catch(() => {}), 20_000);

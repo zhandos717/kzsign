@@ -68,9 +68,25 @@ export interface AskOptions<T> {
   dispose?: (v: T) => void;
 }
 
-export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000) {
+export interface InlineHandle {
+  close(): void;
+}
+/** Показать окно подтверждения прямо на странице запросившей сессии; null — нельзя, нужно отдельное окно */
+export type InlinePresenter = (url: string, session: object | undefined) => Promise<InlineHandle | null>;
+
+const INLINE_LOAD_TIMEOUT_MS = 2000;
+
+export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000, inline?: InlinePresenter) {
   const queue: Job[] = [];
-  let active: { job: Job; token: string; windowId: number | null; timer: ReturnType<typeof setTimeout>; verifying: boolean } | null = null;
+  let active: {
+    job: Job;
+    token: string;
+    windowId: number | null;
+    inline: InlineHandle | null;
+    seen: boolean;
+    timer: ReturnType<typeof setTimeout>;
+    verifying: boolean;
+  } | null = null;
 
   win.onRemoved((id) => {
     if (active && active.windowId === id) finish(null, false);
@@ -80,6 +96,7 @@ export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000) {
     if (!active) return;
     const { job, windowId, timer } = active;
     clearTimeout(timer);
+    active.inline?.close();
     active = null;
     if (closeWindow && windowId !== null) void win.close(windowId).catch(() => {});
     job.done(value);
@@ -90,10 +107,26 @@ export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000) {
     if (active || !queue.length) return;
     const job = queue.shift()!;
     const token = hex(crypto.getRandomValues(new Uint8Array(16)).buffer);
-    active = { job, token, windowId: null, timer: setTimeout(() => finish(null), timeoutMs), verifying: false };
+    active = { job, token, windowId: null, inline: null, seen: false, timer: setTimeout(() => finish(null), timeoutMs), verifying: false };
     const current = active;
+    const url = `confirm.html#${token}`;
+    const handle = inline ? await inline(url, job.session).catch(() => null) : null;
+    if (active !== current) return handle?.close();
+    if (handle) {
+      current.inline = handle;
+      // iframe может не загрузиться (CSP страницы, ошибка) — тогда отдельное окно
+      setTimeout(() => { if (active === current && !current.seen) void toWindow(current); }, INLINE_LOAD_TIMEOUT_MS);
+      return;
+    }
+    await toWindow(current);
+  }
+
+  async function toWindow(current: NonNullable<typeof active>) {
+    current.inline?.close();
+    current.inline = null;
+    current.seen = false;
     try {
-      const id = await win.open(`confirm.html#${token}`);
+      const id = await win.open(`confirm.html#${current.token}`);
       if (active === current) current.windowId = id;
       else void win.close(id).catch(() => {});
     } catch {
@@ -121,7 +154,14 @@ export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000) {
     },
 
     pending(token: string): ConfirmRequest | undefined {
-      return active && active.token === token ? active.job.req : undefined;
+      if (!active || active.token !== token) return undefined;
+      active.seen = true;
+      return active.job.req;
+    },
+
+    /** окно на странице не может подтвердить свою видимость — показываем отдельное окно */
+    async fallback(token: string): Promise<void> {
+      if (active && active.token === token && active.inline) await toWindow(active);
     },
 
     async answer(token: string, a: Answer): Promise<AnswerResult> {

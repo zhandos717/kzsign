@@ -1,6 +1,39 @@
 import type { BridgeToShim, ShimToBridge } from "../page/ws-shim";
 import { PORT_NAME } from "../sw/router";
 
+const HOST_TAG = "kzsign-confirm";
+let overlay: HTMLElement | null = null;
+
+const important = (css: Record<string, string>) => Object.entries(css).map(([k, v]) => `${k}:${v} !important`).join(";");
+
+// Окно подтверждения — iframe расширения (другой origin) в закрытом shadow root: скрипты страницы не видят ни токен в URL,
+// ни содержимое окна; перекрытие и прозрачность ловит trackVisibility внутри самого iframe
+function showConfirm(url: unknown, runtime: typeof chrome.runtime): void {
+  let u: URL;
+  try {
+    u = new URL(String(url));
+  } catch {
+    return;
+  }
+  if (u.protocol !== "chrome-extension:" || u.pathname !== "/confirm.html" || (runtime.id && u.host !== runtime.id)) return;
+  hideConfirm();
+  const host = document.createElement(HOST_TAG);
+  host.setAttribute("style", important({ position: "fixed", inset: "0", "z-index": "2147483647", display: "flex", "align-items": "center", "justify-content": "center", background: "rgba(10,20,35,.45)", margin: "0", padding: "0", border: "0", opacity: "1", transform: "none", filter: "none", visibility: "visible", "pointer-events": "auto" }));
+  const root = host.attachShadow({ mode: "closed" });
+  const frame = document.createElement("iframe");
+  frame.src = u.href;
+  frame.setAttribute("style", important({ width: "400px", height: "600px", "max-width": "calc(100vw - 24px)", "max-height": "calc(100vh - 24px)", border: "0", "border-radius": "14px", "box-shadow": "0 18px 50px rgba(0,0,0,.35)", background: "#fff", opacity: "1", transform: "none", filter: "none" }));
+  frame.setAttribute("allow", "");
+  root.append(frame);
+  (document.documentElement ?? document.body).append(host);
+  overlay = host;
+}
+
+function hideConfirm(): void {
+  overlay?.remove();
+  overlay = null;
+}
+
 export function installBridge(win: Window, runtime: typeof chrome.runtime): void {
   win.addEventListener("message", (e: MessageEvent) => {
     if (e.source !== win || e.data?.__kzsign !== "hello" || !e.ports[0]) return;
@@ -24,10 +57,13 @@ function serve(shim: MessagePort, runtime: typeof chrome.runtime): void {
         return;
       }
       sockets.set(m.id, port);
-      port.onMessage.addListener((r: { kind: string; text: string }) => {
+      port.onMessage.addListener((r: { kind: string; text: string; action?: string; url?: string }) => {
         if (r?.kind === "message") shim.postMessage({ id: m.id, kind: "message", text: r.text } satisfies BridgeToShim);
+        else if (r?.kind === "control" && r.action === "confirm-show") showConfirm(r.url, runtime);
+        else if (r?.kind === "control" && r.action === "confirm-hide") hideConfirm();
       });
       port.onDisconnect.addListener(() => {
+        hideConfirm();
         sockets.delete(m.id);
         shim.postMessage({ id: m.id, kind: "closed", code: 1006 } satisfies BridgeToShim);
       });
