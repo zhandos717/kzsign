@@ -35,6 +35,12 @@ for (const scheme of ["light", "dark"] as const) {
     await f.getByRole("button", { name: "Показать пароль" }).click();
     await page.waitForTimeout(1200);
     await page.screenshot({ path: `out/confirm-${scheme}.png` });
+    await f.getByRole("button", { name: "Подписать" }).click();
+    await page.waitForTimeout(800);
+    await p.reload();
+    await p.getByRole("tab", { name: "История" }).click();
+    await p.locator(".hist").first().getByText("Подробнее").click();
+    await p.screenshot({ path: `out/popup-history-${scheme}.png`, fullPage: true });
     await ctx.close();
     server.close();
   });

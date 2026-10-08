@@ -1,5 +1,6 @@
 import type { KeyMeta } from "../sw/keystore";
 import type { Mode } from "../sw/policy";
+import type { HistoryEntry } from "../sw/history";
 import { el, icon, topbar, initials, validity, fileDrop, passwordField } from "./dom";
 
 type Reply<T> = T & { error?: string; retryAfterSec?: number };
@@ -28,18 +29,19 @@ async function fileToB64(f: File): Promise<string> {
 }
 
 const app = document.getElementById("app")!;
-let tab: "keys" | "sign" | "settings" = "keys";
+let tab: "keys" | "sign" | "history" | "settings" = "keys";
+let historyQuery = "";
 let openIds: string[] = [];
 
 async function render() {
   const [{ keys = [], open = [] }, { mode = "auto" }] = await Promise.all([send<{ keys: KeyMeta[]; open: string[] }>({ type: "keys.list" }), send<{ mode: Mode }>({ type: "mode.get" })]);
   openIds = open;
   const tabs = el("nav", { className: "tabs", role: "tablist" });
-  for (const [id, label] of [["keys", "Ключи"], ["sign", "Подпись"], ["settings", "Настройки"]] as const) {
+  for (const [id, label] of [["keys", "Ключи"], ["sign", "Подпись"], ["history", "История"], ["settings", "Настройки"]] as const) {
     tabs.append(el("button", { type: "button", role: "tab", "aria-selected": String(tab === id), textContent: label, onclick: () => { tab = id; void render(); } }));
   }
-  const body = tab === "keys" ? keysTab(keys) : tab === "sign" ? signTab(keys) : settingsTab(mode);
-  app.replaceChildren(topbar(MODES.find((m) => m.value === mode)!.title), tabs, el("div", { className: "content" }, ...body));
+  const body = tab === "keys" ? keysTab(keys) : tab === "sign" ? signTab(keys) : tab === "history" ? await historyTab() : settingsTab(mode);
+  app.replaceChildren(topbar(MODES.find((m) => m.value === mode)!.title), tabs, el("div", { className: "content" }, ...body.filter(Boolean) as Node[]));
 }
 
 function keyCard(k: KeyMeta) {
@@ -127,7 +129,7 @@ function signTab(keys: KeyMeta[]) {
     status.textContent = "";
     submit.disabled = true;
     submit.textContent = "Подписываю…";
-    const r = await send<{ cms: string }>({ type: "file.sign", keyId: keySel.value, password: pass.value, file: await fileToB64(f), detached: detached.checked });
+    const r = await send<{ cms: string }>({ type: "file.sign", keyId: keySel.value, password: pass.value, file: await fileToB64(f), fileName: f.name, detached: detached.checked });
     pass.value = "";
     submit.disabled = false;
     submit.textContent = "Подписать";
@@ -137,6 +139,54 @@ function signTab(keys: KeyMeta[]) {
     done.replaceChildren(el("div", { className: "note ok", textContent: `Готово: ${f.name}.cms сохранён в «Загрузки»` }));
   };
   return [form];
+}
+
+const STATUS = { signed: ["подписано", "ok"], canceled: ["отменено", ""], error: ["ошибка", "err"] } as const;
+
+function historyEntry(e: HistoryEntry) {
+  const [label, tone] = STATUS[e.status];
+  const where = e.source === "file" ? `Файл: ${e.fileName ?? "без имени"}` : (e.origin ?? "").replace(/^https?:\/\//, "");
+  const when = new Date(e.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const del = el("button", { type: "button", className: "icon-btn", title: "Удалить запись", "aria-label": "Удалить запись" }, icon("trash"));
+  del.onclick = async () => { await send({ type: "history.remove", id: e.id }); void render(); };
+  const details = el("details", { className: "hash" },
+    el("summary", { textContent: "Подробнее" }),
+    ...e.items.map((it, i) => el("div", { style: "margin-top:6px" },
+      el("div", { className: "small", textContent: `${e.items.length > 1 ? `Документ ${i + 1}: ` : ""}${it.isHash ? "хэш" : "данные"}, ${it.size} Б${e.tsa ? " · с меткой времени" : ""}` }),
+      it.text ? el("pre", { className: "preview", textContent: it.text }) : null,
+      el("code", { textContent: `SHA-256 ${it.sha256}` }))),
+    e.errorCode ? el("div", { className: "small", style: "margin-top:6px", textContent: `Код ошибки: ${e.errorCode}` }) : null);
+  return el("div", { className: "hist" },
+    el("div", { className: "hist-head" },
+      el("strong", { className: "hist-where", textContent: where, title: e.origin ?? e.fileName ?? "" }),
+      el("span", { className: `badge ${tone}`, textContent: label }),
+      del),
+    el("div", { className: "meta small muted" },
+      el("span", { textContent: when }),
+      e.key && el("span", { textContent: `${e.key.alias}${e.key.iin ? " · ИИН " + e.key.iin : e.key.bin ? " · БИН " + e.key.bin : ""}` }),
+      e.items.length > 1 && el("span", { textContent: `${e.items.length} док.` })),
+    details);
+}
+
+async function historyTab() {
+  const { entries = [] } = await send<{ entries: HistoryEntry[] }>({ type: "history.list", query: historyQuery });
+  const search = el("input", { className: "input", type: "search", placeholder: "Поиск: сайт, файл, ИИН", value: historyQuery });
+  let t: ReturnType<typeof setTimeout>;
+  search.oninput = () => { clearTimeout(t); t = setTimeout(() => { historyQuery = search.value; void render().then(() => { const s = document.querySelector<HTMLInputElement>("input[type=search]"); s?.focus(); s?.setSelectionRange(s.value.length, s.value.length); }); }, 250); };
+  const list = entries.length
+    ? el("div", { className: "hist-list" }, ...entries.map(historyEntry))
+    : el("div", { className: "empty" }, icon("file"), el("p", { textContent: historyQuery ? "Ничего не найдено." : "Подписей пока не было." }));
+  const clear = el("button", { type: "button", className: "btn ghost", textContent: "Очистить историю" });
+  clear.onclick = async () => {
+    if (!confirm("Удалить всю историю подписей?")) return;
+    await send({ type: "history.clear" });
+    void render();
+  };
+  return [
+    el("section", { className: "card" }, el("h2", { textContent: "История подписей" }), search, el("div", { style: "margin-top:10px" }, list)),
+    entries.length || historyQuery ? el("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:8px" },
+      el("span", { className: "muted small", textContent: "Хранятся только сведения о подписи — без документов и самих подписей. Последние 500 записей." }), clear) : null,
+  ];
 }
 
 function settingsTab(mode: Mode) {

@@ -6,6 +6,9 @@ import { KzSignError } from "../core/errors";
 import { toBase64 } from "./proto";
 import { openKey } from "./handler";
 import type { createSessionKeys } from "./session-keys";
+import type { createHistory } from "./history";
+import { keyLabel } from "./handler";
+import { describeItems } from "./confirm-manager";
 
 const MODES: Mode[] = ["auto", "extension", "native"];
 
@@ -20,7 +23,12 @@ function fromB64(s: unknown): Uint8Array | null {
 
 export async function handlePopupMessage(
   msg: unknown,
-  deps: { keystore: ReturnType<typeof createKeystore>; storage: Storage; sessionKeys?: ReturnType<typeof createSessionKeys> },
+  deps: {
+    keystore: ReturnType<typeof createKeystore>;
+    storage: Storage;
+    sessionKeys?: ReturnType<typeof createSessionKeys>;
+    history?: ReturnType<typeof createHistory>;
+  },
 ): Promise<unknown> {
   const m = (msg ?? {}) as Record<string, unknown>;
   const { keystore, storage } = deps;
@@ -50,13 +58,43 @@ export async function handlePopupMessage(
       case "file.sign": {
         const file = fromB64(m.file);
         if (!file || typeof m.keyId !== "string") return { error: "BAD_REQUEST" };
-        const key = await openKey(deps, m.keyId, typeof m.password === "string" && m.password !== "" ? m.password : undefined);
+        const [item] = await describeItems([file]);
+        const key = await keyLabel(deps, m.keyId);
+        const record = (status: "signed" | "error", errorCode?: string) =>
+          deps.history
+            ?.add({
+              source: "file",
+              fileName: typeof m.fileName === "string" ? m.fileName.slice(0, 255) : undefined,
+              status,
+              errorCode,
+              tsa: false,
+              key,
+              items: [{ size: item!.size, sha256: item!.sha256, isHash: false, text: item!.preview?.text }],
+            })
+            .catch(() => {});
         try {
-          return { cms: toBase64(await signCms(file, key, { detached: m.detached === true })) };
-        } finally {
-          wipe(key);
+          const parsed = await openKey(deps, m.keyId, typeof m.password === "string" && m.password !== "" ? m.password : undefined);
+          try {
+            const cms = toBase64(await signCms(file, parsed, { detached: m.detached === true }));
+            await record("signed");
+            return { cms };
+          } finally {
+            wipe(parsed);
+          }
+        } catch (e) {
+          await record("error", e instanceof KzSignError ? e.code : "SIGN_ERROR");
+          throw e;
         }
       }
+      case "history.list":
+        return { entries: (await deps.history?.list(typeof m.query === "string" ? m.query : "")) ?? [] };
+      case "history.remove":
+        if (typeof m.id !== "string") return { error: "BAD_REQUEST" };
+        await deps.history?.remove(m.id);
+        return { ok: true };
+      case "history.clear":
+        await deps.history?.clear();
+        return { ok: true };
       default:
         return { error: "UNKNOWN" };
     }

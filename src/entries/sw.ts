@@ -7,10 +7,12 @@ import { httpTsp } from "../core/tsp";
 import { chromeStorage, chromeWindows, openWebSocket, isOwnPage } from "../sw/chrome-adapters";
 import { handlePopupMessage } from "../sw/popup-actions";
 import { createSessionKeys } from "../sw/session-keys";
+import { createHistory } from "../sw/history";
 
 const storage = chromeStorage(chrome.storage.local);
 const keystore = createKeystore(storage);
 const sessionKeys = createSessionKeys(chromeStorage(chrome.storage.session));
+const history = createHistory(storage);
 // Окно на странице — только в верхнем фрейме: во вложенном iframe его легко обрезать или спрятать
 const confirm = createConfirmManager(chromeWindows(), 120_000, async (url, session) => {
   const s = session as Session | undefined;
@@ -22,7 +24,7 @@ const getMode = async () => ((await storage.get("kzsign.mode")) as Mode | undefi
 
 attachRouter(
   chrome.runtime.onConnect,
-  createSessionFactory({ keystore, confirm, getMode, native: createNativeProxy(openWebSocket), sessionKeys, tsp: httpTsp((...a) => fetch(...a)) }),
+  createSessionFactory({ keystore, confirm, getMode, native: createNativeProxy(openWebSocket), sessionKeys, history, tsp: httpTsp((...a) => fetch(...a)) }),
 );
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
@@ -38,7 +40,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       }
       if (msg.type === "confirm.answer") return confirm.answer(String(msg.token), msg.answer as Answer, from);
     }
-    if (isOwnPage(sender, "popup.html")) return handlePopupMessage(msg, { keystore, storage, sessionKeys });
+    if (isOwnPage(sender, "popup.html")) return handlePopupMessage(msg, { keystore, storage, sessionKeys, history });
     return { error: "FORBIDDEN" };
   };
   run().then(reply, () => reply({ error: "INTERNAL" }));

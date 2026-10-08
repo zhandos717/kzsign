@@ -144,3 +144,29 @@ describe("запомненный ключ (до закрытия браузер�
     expect((verifyErr as { code: string }).code).toBe("NEED_PASSWORD");
   });
 });
+
+describe("история подписей", () => {
+  function memArea() {
+    const m = new Map<string, unknown>();
+    return { get: async (k: string) => structuredClone(m.get(k)), set: async (k: string, v: unknown) => { m.set(k, structuredClone(v)); }, remove: async (k: string) => { m.delete(k); }, keys: async () => [...m.keys()] };
+  }
+
+  it("подпись, отмена и ошибка попадают в историю; getKeyInfo — нет", async () => {
+    const { createHistory } = await import("../../src/sw/history");
+    const history = createHistory(memArea());
+    const frame = common("createCAdESFromBase64", ["PKCS12", "SIGNATURE", Buffer.from("Договор").toString("base64"), true]);
+    await session(approve, { history }).h.onFrame(frame);
+    await session(reject, { history }).h.onFrame(frame);
+    const tspFrame = JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "cms", data: b64("a"), signingParams: { tsaProfile: {} } } });
+    await session(approve, { history, tsp: async () => { throw new Error("down"); } }).h.onFrame(tspFrame);
+    await session(approve, { history }).h.onFrame(common("getKeyInfo", ["PKCS12"]));
+
+    const list = await history.list();
+    expect(list.map((e) => e.status)).toEqual(["error", "canceled", "signed"]);
+    const signed = list[2]!;
+    expect(signed).toMatchObject({ source: "site", origin: "https://a.kz", tsa: false, key: { alias: expect.any(String), iin: expect.stringMatching(/^\d{12}$/) } });
+    expect(signed.items[0]).toMatchObject({ size: new TextEncoder().encode("Договор").length, isHash: false, text: "Договор" });
+    expect(list[0]).toMatchObject({ tsa: true, errorCode: "SIGN_ERROR" });
+    expect(list[1]!.key).toBeUndefined();
+  });
+});

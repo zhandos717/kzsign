@@ -151,3 +151,12 @@ details.hash code { display: block; margin-top: 4px; font: 11px/1.4 var(--mono);
 .pwfield .eye svg { width: 18px; height: 18px; }
 .confirm .preview { max-height: 230px; }
 .page > .content { align-content: start; }
+
+/* история */
+.hist-list { display: grid; gap: 8px; }
+.hist { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.hist-head { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
+.hist-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist .meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 2px; }
+.hist .preview { max-height: 90px; margin-top: 4px; }
+.tabs button { font-size: 13px; }

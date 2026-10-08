@@ -72,6 +72,23 @@ test("подпись: окно показывает сайт и данные, CM
   await page.close();
 });
 
+test("история: подпись с сайта видна во вкладке «История»", async () => {
+  const { result, confirm, page } = await startSigning("Акт сверки для истории");
+  await confirm.locator("input[type=password]").fill(PASSWORD);
+  await confirm.getByRole("button", { name: "Подписать" }).click();
+  expect((await result).code).toBe("200");
+  await page.close();
+  const popup = await ctx.newPage();
+  await popup.goto(`chrome-extension://${extId}/popup.html`);
+  await popup.getByRole("tab", { name: "История" }).click();
+  const first = popup.locator(".hist").first();
+  await expect(first).toContainText("localhost");
+  await expect(first).toContainText("подписано");
+  await first.getByText("Подробнее").click();
+  await expect(first.locator(".preview")).toHaveText("Акт сверки для истории");
+  await popup.close();
+});
+
 test("второй раз — без пароля (ключ открыт до закрытия браузера)", async () => {
   const first = await startSigning("первый");
   await first.confirm.locator("input[type=password]").fill(PASSWORD);

@@ -9,6 +9,7 @@ import { certInfo } from "../core/cert-info";
 import { KzSignError } from "../core/errors";
 import type { TspClient } from "../core/tsp";
 import type { createSessionKeys } from "./session-keys";
+import type { createHistory, HistoryInput } from "./history";
 
 export interface ConfirmLike {
   ask<T>(req: ConfirmRequest, verify: (keyId: string, password: string | undefined) => Promise<T>, opts?: AskOptions<T>): Promise<T | null>;
@@ -27,6 +28,7 @@ export interface HandlerDeps {
   tsp?: TspClient;
   /** ключи, открытые паролем до закрытия браузера */
   sessionKeys?: ReturnType<typeof createSessionKeys>;
+  history?: ReturnType<typeof createHistory>;
 }
 
 const VERSION_MSG = /^\s*\{\s*"result"\s*:\s*\{\s*"version"/;
@@ -69,17 +71,38 @@ async function withKey<T>(deps: HandlerDeps, s: Session, req: ConfirmRequest, us
   }
 }
 
+export async function keyLabel(deps: Pick<HandlerDeps, "keystore">, keyId: string): Promise<HistoryInput["key"]> {
+  const meta = (await deps.keystore.list()).find((k) => k.id === keyId);
+  return meta && { alias: meta.alias, iin: meta.iin, bin: meta.bin };
+}
+
 async function sign(deps: HandlerDeps, s: Session, req: Request, p: SignRequest): Promise<string> {
   const items = await describeItems(p.data);
+  const record = (status: HistoryInput["status"], key?: HistoryInput["key"], errorCode?: string) =>
+    deps.history
+      ?.add({
+        source: "site",
+        origin: s.origin,
+        status,
+        errorCode,
+        tsa: req.tsa,
+        key,
+        items: items.map((i) => ({ size: i.size, sha256: i.sha256, isHash: p.isHash, text: i.preview?.text })),
+      })
+      .catch(() => {});
+  let usedKey: HistoryInput["key"];
   try {
-    const cms = await withKey(deps, s, { origin: s.origin, operation: "sign", items, isHash: p.isHash }, async (key) => {
+    const cms = await withKey(deps, s, { origin: s.origin, operation: "sign", items, isHash: p.isHash }, async (key, keyId) => {
+      usedKey = await keyLabel(deps, keyId);
       const out: Uint8Array[] = [];
       for (const data of p.data) out.push(await signCms(data, key, { detached: p.detached, tsp: req.tsa ? deps.tsp : undefined }));
       return out;
     });
+    await record(cms ? "signed" : "canceled", usedKey);
     return cms ? ok(req, cms) : canceled(req);
   } catch (e) {
     const code = e instanceof KzSignError ? e.code : "SIGN_ERROR";
+    await record("error", usedKey, code);
     return req.dialect === "basics" ? fail(req, "SIGN_ERROR", code) : fail(req, "500", code);
   }
 }

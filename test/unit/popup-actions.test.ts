@@ -67,3 +67,23 @@ describe("запомненные ключи в popup", () => {
     expect(await d.sessionKeys.ids()).toEqual([]);
   });
 });
+
+describe("история в popup", () => {
+  it("подпись файла записывается; history.list/remove/clear", async () => {
+    const { createHistory } = await import("../../src/sw/history");
+    const base = deps();
+    const d = { ...base, history: createHistory(memStorage()) };
+    const { key } = (await handlePopupMessage({ type: "keys.import", file: b64(readFixture(RSA_PERSONAL)), password: FIXTURE_PASSWORD }, d)) as { key: { id: string } };
+    await handlePopupMessage({ type: "file.sign", keyId: key.id, password: FIXTURE_PASSWORD, file: b64(new TextEncoder().encode("abc")), fileName: "акт.txt", detached: true }, d);
+    await handlePopupMessage({ type: "file.sign", keyId: key.id, password: "bad", file: b64(new Uint8Array([1])), fileName: "x.bin", detached: true }, d);
+    const { entries } = (await handlePopupMessage({ type: "history.list" }, d)) as { entries: { status: string; fileName: string; source: string; items: { text?: string }[] }[] };
+    expect(entries.map((e) => [e.status, e.fileName, e.source])).toEqual([["error", "x.bin", "file"], ["signed", "акт.txt", "file"]]);
+    expect(entries[1]!.items[0]!.text).toBe("abc");
+    const found = (await handlePopupMessage({ type: "history.list", query: "акт" }, d)) as { entries: { id: string }[] };
+    expect(found.entries).toHaveLength(1);
+    await handlePopupMessage({ type: "history.remove", id: found.entries[0]!.id }, d);
+    expect(((await handlePopupMessage({ type: "history.list" }, d)) as { entries: unknown[] }).entries).toHaveLength(1);
+    await handlePopupMessage({ type: "history.clear" }, d);
+    expect(((await handlePopupMessage({ type: "history.list" }, d)) as { entries: unknown[] }).entries).toEqual([]);
+  });
+});
