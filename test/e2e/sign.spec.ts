@@ -27,10 +27,11 @@ test.beforeAll(async () => {
 
   const popup = await ctx.newPage();
   await popup.goto(`chrome-extension://${extId}/popup.html`);
+  await popup.getByRole("button", { name: "Добавить ЭЦП" }).click();
   await popup.locator("input[type=file]").setInputFiles(KEY);
   await popup.locator("input[type=password]").fill(PASSWORD);
-  await popup.getByRole("button", { name: "Добавить" }).click();
-  await expect(popup.locator(".key")).toHaveCount(1, { timeout: 30_000 });
+  await popup.getByRole("button", { name: "Добавить", exact: true }).click();
+  await expect(popup.locator(".keycard")).toHaveCount(1, { timeout: 30_000 });
   await popup.close();
 });
 
@@ -80,13 +81,59 @@ test("история: подпись с сайта видна во вкладк�
   await page.close();
   const popup = await ctx.newPage();
   await popup.goto(`chrome-extension://${extId}/popup.html`);
-  await popup.getByRole("tab", { name: "История" }).click();
+  await popup.getByRole("button", { name: "История" }).click();
   const first = popup.locator(".hist").first();
   await expect(first).toContainText("localhost");
   await expect(first).toContainText("подписано");
   await first.getByText("Подробнее").click();
   await expect(first.locator(".preview")).toHaveText("Акт сверки для истории");
   await popup.close();
+});
+
+test("незнакомый сайт: предупреждение; «Запомнить сайт» убирает его в следующий раз", async () => {
+  const first = await startSigning("a");
+  await expect(first.confirm.getByText("Этот сайт вы видите впервые")).toBeVisible();
+  await first.confirm.getByLabel("Запомнить сайт").check();
+  await first.confirm.locator("input[type=password]").fill(PASSWORD);
+  await first.confirm.getByRole("button", { name: "Подписать" }).click();
+  expect((await first.result).code).toBe("200");
+  await first.page.close();
+  const second = await startSigning("b");
+  await expect(second.confirm.locator(".origin")).toContainText("localhost");
+  await expect(second.confirm.getByText("Этот сайт вы видите впервые")).toBeHidden();
+  await second.confirm.getByRole("button", { name: "Отмена" }).click();
+  await second.result;
+  await second.page.close();
+  const p = await ctx.newPage();
+  await p.goto(`chrome-extension://${extId}/popup.html`);
+  await p.evaluate(() => chrome.runtime.sendMessage({ type: "sites.list" }).then((r: { sites: { origin: string }[] }) => Promise.all(r.sites.map((s) => chrome.runtime.sendMessage({ type: "sites.remove", origin: s.origin })))));
+  await p.close();
+});
+
+test("«+ Другой ключ»: загрузить .p12 прямо в окне и подписать", async () => {
+  const keyIds = async () => {
+    const p = await ctx.newPage();
+    await p.goto(`chrome-extension://${extId}/popup.html`);
+    const r = (await p.evaluate(() => chrome.runtime.sendMessage({ type: "keys.list" }))) as { keys: { id: string }[] };
+    await p.close();
+    return r.keys.map((k) => k.id);
+  };
+  const before = await keyIds();
+  const { result, confirm, page } = await startSigning("import");
+  await confirm.getByRole("button", { name: "+ Другой ключ" }).click();
+  await confirm.locator("input[type=file]").setInputFiles(resolve("test/fixtures/nca/ncanode-go-official/legal/valid/head.p12"));
+  await confirm.locator("input[type=password]").fill(PASSWORD);
+  await confirm.getByRole("button", { name: "Загрузить и подписать" }).click();
+  const res = await result;
+  expect(res.code).toBe("200");
+  expect((await verifyCms(new Uint8Array(Buffer.from(res.responseObject, "base64")))).valid).toBe(true);
+  await page.close();
+  const added = (await keyIds()).filter((id) => !before.includes(id));
+  expect(added).toHaveLength(1);
+  const p = await ctx.newPage();
+  await p.goto(`chrome-extension://${extId}/popup.html`);
+  await p.evaluate((id) => chrome.runtime.sendMessage({ type: "keys.remove", id }), added[0]!);
+  await p.close();
 });
 
 test("второй раз — без пароля (ключ открыт до закрытия браузера)", async () => {
