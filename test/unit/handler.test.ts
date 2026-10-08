@@ -40,7 +40,7 @@ describe("handler (режим extension)", () => {
     expect((await verifyCms(unb64(res.responseObject))).valid).toBe(true);
     expect(unlocked.at(-1)!.privateKeyPkcs8.every((b) => b === 0)).toBe(true);
     const req = (approve.ask as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
-    expect(req).toMatchObject({ origin: "https://a.kz", operation: "sign", items: [{ size: 5, preview: "hello" }] });
+    expect(req).toMatchObject({ origin: "https://a.kz", operation: "sign", items: [{ size: 5, preview: { text: "hello", truncated: false, total: 5 } }] });
   });
 
   it("отказ → action.canceled", async () => {

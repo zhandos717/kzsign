@@ -53,6 +53,13 @@ async function derive(password: string, salt: Uint8Array, iterations: number) {
 export function createKeystore(storage: Storage, opts: { iterations?: number; now?: () => number } = {}) {
   const iterations = opts.iterations ?? 600_000;
   const now = opts.now ?? Date.now;
+  // попытки по одному ключу строго по очереди: иначе параллельные unlock читают один и тот же счётчик неудач
+  const locks = new Map<string, Promise<unknown>>();
+  const serial = <T>(id: string, fn: () => Promise<T>): Promise<T> => {
+    const run = (locks.get(id) ?? Promise.resolve()).then(fn, fn);
+    locks.set(id, run.catch(() => {}));
+    return run;
+  };
 
   async function load(id: string): Promise<Record_> {
     const rec = (await storage.get(KEY + id)) as Record_ | undefined;
@@ -102,7 +109,12 @@ export function createKeystore(storage: Storage, opts: { iterations?: number; no
       await storage.remove(PIN + id);
     },
 
-    async unlock(id: string, password: string): Promise<ParsedP12> {
+    unlock(id: string, password: string): Promise<ParsedP12> {
+      return serial(id, () => unlockNow(id, password));
+    },
+  };
+
+  async function unlockNow(id: string, password: string): Promise<ParsedP12> {
       const rec = await load(id);
       const pin = await checkLock(id);
       const { aes, verifier } = await derive(password, fromB64(rec.salt), iterations);
@@ -122,6 +134,5 @@ export function createKeystore(storage: Storage, opts: { iterations?: number; no
       } finally {
         file.fill(0);
       }
-    },
-  };
+  }
 }

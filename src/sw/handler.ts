@@ -1,7 +1,7 @@
 import { parseFrame, ok, fail, toBase64, type Request, type SignRequest } from "./proto";
 import type { Session, SessionFactory } from "./router";
 import type { createKeystore } from "./keystore";
-import { describeItems, type ConfirmRequest } from "./confirm-manager";
+import { describeItems, type ConfirmRequest, type AskOptions } from "./confirm-manager";
 import { decide, type Mode } from "./policy";
 import { signCms } from "../core/signer";
 import { wipe, type ParsedP12 } from "../core/p12";
@@ -10,7 +10,8 @@ import { KzSignError } from "../core/errors";
 import type { TspClient } from "../core/tsp";
 
 export interface ConfirmLike {
-  ask<T>(req: ConfirmRequest, verify: (keyId: string, password: string) => Promise<T>): Promise<T | null>;
+  ask<T>(req: ConfirmRequest, verify: (keyId: string, password: string) => Promise<T>, opts?: AskOptions<T>): Promise<T | null>;
+  cancelSession?(session: object): void;
 }
 interface NativeLike {
   alive(): Promise<boolean>;
@@ -39,8 +40,11 @@ function unsupported(req: Request, reason: string): string {
   return fail(req, ["xml", "raw"].includes(reason) ? "UNSUPPORTED_FORMAT" : "UNKNOWN_METHOD", reason);
 }
 
-async function withKey<T>(deps: HandlerDeps, req: ConfirmRequest, use: (key: ParsedP12, keyId: string) => Promise<T>): Promise<T | null> {
-  const unlocked = await deps.confirm.ask(req, async (keyId, password) => ({ key: await deps.keystore.unlock(keyId, password), keyId }));
+async function withKey<T>(deps: HandlerDeps, s: Session, req: ConfirmRequest, use: (key: ParsedP12, keyId: string) => Promise<T>): Promise<T | null> {
+  const unlocked = await deps.confirm.ask(req, async (keyId, password) => ({ key: await deps.keystore.unlock(keyId, password), keyId }), {
+    session: s,
+    dispose: (v) => wipe(v.key),
+  });
   if (!unlocked) return null;
   try {
     return await use(unlocked.key, unlocked.keyId);
@@ -52,7 +56,7 @@ async function withKey<T>(deps: HandlerDeps, req: ConfirmRequest, use: (key: Par
 async function sign(deps: HandlerDeps, s: Session, req: Request, p: SignRequest): Promise<string> {
   const items = await describeItems(p.data);
   try {
-    const cms = await withKey(deps, { origin: s.origin, operation: "sign", items, isHash: p.isHash }, async (key) => {
+    const cms = await withKey(deps, s, { origin: s.origin, operation: "sign", items, isHash: p.isHash }, async (key) => {
       const out: Uint8Array[] = [];
       for (const data of p.data) out.push(await signCms(data, key, { detached: p.detached, tsp: req.tsa ? deps.tsp : undefined }));
       return out;
@@ -65,7 +69,7 @@ async function sign(deps: HandlerDeps, s: Session, req: Request, p: SignRequest)
 }
 
 async function keyInfo(deps: HandlerDeps, s: Session, req: Request): Promise<string> {
-  const info = await withKey(deps, { origin: s.origin, operation: "keyInfo", items: [], isHash: false }, async (key, keyId) => {
+  const info = await withKey(deps, s, { origin: s.origin, operation: "keyInfo", items: [], isHash: false }, async (key, keyId) => {
     const meta = (await deps.keystore.list()).find((k) => k.id === keyId);
     const c = certInfo(key.certificateDer);
     return {
@@ -142,6 +146,7 @@ export function createSessionFactory(deps: HandlerDeps): SessionFactory {
         return handleLocally(deps, s, req);
       },
       onClose() {
+        deps.confirm.cancelSession?.(s);
         native?.close();
         native = null;
       },

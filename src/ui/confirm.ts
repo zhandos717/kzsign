@@ -1,6 +1,7 @@
 import type { ConfirmRequest, AnswerResult } from "../sw/confirm-manager";
 import type { KeyMeta } from "../sw/keystore";
 import { splitHost } from "./site";
+import { armAfterFocus } from "./arm";
 
 const token = location.hash.slice(1);
 const app = document.getElementById("app")!;
@@ -13,6 +14,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
 
 const ERRORS: Record<string, string> = {
   BAD_PASSWORD: "Неверный пароль",
+  BUSY: "Подождите, идёт проверка пароля",
   PIN_LOCKED: "Слишком много попыток. Повторите через {s} с",
   MALFORMED_P12: "Ключ повреждён — импортируйте его заново",
   NOT_FOUND: "Запрос устарел",
@@ -38,7 +40,10 @@ async function main() {
     const list = el("ol", { className: "items" });
     for (const it of req.items) {
       const li = el("li", {}, el("div", { textContent: `${req.isHash ? "Хэш" : "Данные"}: ${size(it.size)}` }), el("code", { className: "hash", textContent: `SHA-256 ${it.sha256}` }));
-      if (it.preview !== undefined) li.append(el("pre", { className: "preview", textContent: it.preview }));
+      if (it.preview) {
+        li.append(el("pre", { className: "preview", textContent: it.preview.text }));
+        if (it.preview.truncated) li.append(el("p", { className: "warn", textContent: `Показано ${it.preview.text.length} из ${it.preview.total} символов. Подписывается весь документ.` }));
+      } else if (!req.isHash) li.append(el("p", { className: "dim", textContent: "Превью недоступно: двоичные данные или текст с невидимыми символами." }));
       list.append(li);
     }
     app.append(list);
@@ -61,10 +66,11 @@ async function main() {
         ` ${k.alias} — ${k.iin ? "ИИН " + k.iin : ""}${k.bin ? " БИН " + k.bin : ""} · до ${k.notAfter.slice(0, 10)}${expired ? " (истёк)" : ""}`),
     );
   });
-  const password = el("input", { type: "password", name: "password", autocomplete: "off", required: true, autofocus: true });
+  const password = el("input", { type: "password", name: "password", autocomplete: "off", required: true });
   const status = el("p", { className: "error", role: "alert" });
   const submit = el("button", { type: "submit", textContent: req.operation === "sign" ? "Подписать" : "Разрешить" });
   const cancel = el("button", { type: "button", className: "secondary", textContent: "Отмена", onclick: () => answer({ cancel: true }) });
+  armAfterFocus(submit, window);
   form.append(fieldset, el("label", {}, "Пароль ключа ", password), status, el("div", { className: "actions" }, cancel, submit));
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -74,7 +80,7 @@ async function main() {
     const r = await answer({ keyId, password: password.value });
     if (r.ok) return;
     password.value = "";
-    submit.disabled = false;
+    armAfterFocus(submit, window);
     status.textContent = (ERRORS[r.code] ?? r.code).replace("{s}", String(r.retryAfterSec ?? ""));
   };
   app.append(form);

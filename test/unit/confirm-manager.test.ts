@@ -110,16 +110,16 @@ describe("confirm-manager", () => {
 
 describe("makePreview / describeItems", () => {
   it("текст — превью, не больше 2000 символов", () => {
-    expect(makePreview(new TextEncoder().encode("Договор\nстрока\t2"))).toBe("Договор\nстрока\t2");
-    expect(makePreview(new TextEncoder().encode("я".repeat(3000)))!.length).toBe(2001);
+    expect(makePreview(new TextEncoder().encode("Договор\nстрока\t2"))!.text).toBe("Договор\nстрока\t2");
+    expect(makePreview(new TextEncoder().encode("я".repeat(3000)))!.text.length).toBe(2000);
   });
   it("бинарные данные и управляющие символы — без превью", () => {
     expect(makePreview(new Uint8Array([0xff, 0xfe, 0x00]))).toBeUndefined();
     expect(makePreview(new TextEncoder().encode("a\u0000b"))).toBeUndefined();
-    expect(makePreview(new TextEncoder().encode("a‮b"))).toBeUndefined();
+    expect(makePreview(new TextEncoder().encode("a" + String.fromCharCode(0x202e) + "b"))).toBeUndefined();
   });
   it("describeItems: размер и SHA-256", async () => {
     const [d] = await describeItems([new TextEncoder().encode("abc")]);
-    expect(d).toEqual({ size: 3, sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", preview: "abc" });
+    expect(d).toEqual({ size: 3, sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", preview: { text: "abc", truncated: false, total: 3 } });
   });
 });
