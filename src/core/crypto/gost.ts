@@ -8,6 +8,7 @@ export const OID_GOST_DIGEST = "1.2.398.3.10.1.3.3";
 export const OID_GOST_SIGNATURE = "1.2.398.3.10.1.1.2.3.2";
 
 export interface GostEngine {
+  /** Стрибог-512 в обычном порядке байтов, как в CMS messageDigest; sign/verify сами разворачивают его в число little-endian */
   digest(data: Uint8Array): Uint8Array;
   sign(digest: Uint8Array, pkcs8: Uint8Array): Uint8Array;
   verify(digest: Uint8Array, signature: Uint8Array, publicKey: Uint8Array): boolean;
@@ -27,12 +28,12 @@ function privateScalar(pkcs8: Uint8Array): Uint8Array {
 }
 
 export const gost: GostEngine = {
-  digest: (data) => reverse(streebog512(data)),
+  digest: (data) => streebog512(data),
 
   sign(digest, pkcs8) {
     const scalar = reverse(privateScalar(pkcs8));
     try {
-      return reverseHalves(curveSign(CURVE, scalar, digest));
+      return reverseHalves(curveSign(CURVE, scalar, reverse(digest)));
     } finally {
       scalar.fill(0);
     }
@@ -40,7 +41,7 @@ export const gost: GostEngine = {
 
   verify(digest, signature, publicKey) {
     try {
-      return curveVerify(CURVE, Uint8Array.from([4, ...reverseHalves(publicKey)]), digest, reverseHalves(signature));
+      return curveVerify(CURVE, Uint8Array.from([4, ...reverseHalves(publicKey)]), reverse(digest), reverseHalves(signature));
     } catch {
       return false;
     }

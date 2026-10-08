@@ -15,7 +15,7 @@ JS: `@li0ard/gostcurves@0.1.6` + `@li0ard/streebog@0.2.6` (MIT, поверх `@n
 | Параметр | Значение |
 |---|---|
 | Кривая `1.2.398.3.10.1.1.2.2.1` | совпадает с TC26 `id-tc26-gost-3410-12-512-paramSetA` (`ID_GOSTR3410_2012_512_PARAM_SET_A`) |
-| Хэш | Стрибог-512; в подпись идёт в обратном порядке байтов (`reverse(streebog512(x))`) |
+| Хэш | Стрибог-512. В атрибуте `messageDigest` — обычный порядок байтов; как число для подписи — `reverse(streebog512(x))` (подтверждено NCANode, см. 0002) |
 | Закрытый ключ в PKCS#8 | `privateKey` = OCTET STRING { OCTET STRING(64) }, little-endian → для библиотеки `reverse` |
 | Открытый ключ в сертификате | OCTET STRING(128) = `X_le ‖ Y_le` → для библиотеки `0x04 ‖ reverse(X) ‖ reverse(Y)` |
 | Подпись (BIT STRING, 128 байт) | две половины по 64 байта, каждая little-endian → для библиотеки развернуть каждую половину |

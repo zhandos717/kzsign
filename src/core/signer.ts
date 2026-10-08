@@ -59,7 +59,7 @@ export async function signCms(data: Uint8Array, key: ParsedP12, opts: SignOption
         attr(OID_CONTENT_TYPE, new asn1js.ObjectIdentifier({ value: OID_DATA })),
         attr(OID_SIGNING_TIME, new asn1js.UTCTime({ valueDate: opts.signingTime ?? new Date() })),
         attr(OID_MESSAGE_DIGEST, new asn1js.OctetString({ valueHex: await digestFor(gostKey, data) })),
-        attr(OID_SIGNING_CERT_V2, signingCertificateV2(digestOid, await digestFor(gostKey, key.certificateDer), cert)),
+        attr(OID_SIGNING_CERT_V2, signingCertificateV2(OID_SHA256, await sha256(key.certificateDer), cert)),
       ],
     }),
   });
