@@ -1,0 +1,17 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>NCALayer test page</title></head>
+<body>
+<iframe id="frame" src="about:blank" hidden></iframe>
+<script>
+  window.ncaCall = (frame) => new Promise((resolve, reject) => {
+    const ws = new WebSocket("wss://127.0.0.1:13579/");
+    let hello = false;
+    ws.onmessage = (e) => {
+      if (!hello) { hello = true; ws.send(JSON.stringify(frame)); return; }
+      resolve(JSON.parse(e.data));
+      ws.close();
+    };
+    ws.onclose = (e) => { if (e.code !== 1000) reject(new Error("closed " + e.code)); };
+  });
+</script>
+</body></html>
