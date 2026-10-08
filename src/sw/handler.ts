@@ -8,9 +8,10 @@ import { wipe, type ParsedP12 } from "../core/p12";
 import { certInfo } from "../core/cert-info";
 import { KzSignError } from "../core/errors";
 import type { TspClient } from "../core/tsp";
+import type { createSessionKeys } from "./session-keys";
 
 export interface ConfirmLike {
-  ask<T>(req: ConfirmRequest, verify: (keyId: string, password: string) => Promise<T>, opts?: AskOptions<T>): Promise<T | null>;
+  ask<T>(req: ConfirmRequest, verify: (keyId: string, password: string | undefined) => Promise<T>, opts?: AskOptions<T>): Promise<T | null>;
   cancelSession?(session: object): void;
   fallbackSession?(session: object): Promise<void>;
 }
@@ -24,6 +25,8 @@ export interface HandlerDeps {
   getMode: () => Promise<Mode>;
   native?: NativeLike;
   tsp?: TspClient;
+  /** ключи, открытые паролем до закрытия браузера */
+  sessionKeys?: ReturnType<typeof createSessionKeys>;
 }
 
 const VERSION_MSG = /^\s*\{\s*"result"\s*:\s*\{\s*"version"/;
@@ -41,8 +44,19 @@ function unsupported(req: Request, reason: string): string {
   return fail(req, ["xml", "raw"].includes(reason) ? "UNSUPPORTED_FORMAT" : "UNKNOWN_METHOD", reason);
 }
 
+export async function openKey(deps: Pick<HandlerDeps, "keystore" | "sessionKeys">, keyId: string, password: string | undefined): Promise<ParsedP12> {
+  if (password === undefined) {
+    const remembered = await deps.sessionKeys?.get(keyId);
+    if (!remembered) throw new KzSignError("NEED_PASSWORD", "нужен пароль");
+    return remembered;
+  }
+  const key = await deps.keystore.unlock(keyId, password);
+  await deps.sessionKeys?.remember(keyId, key);
+  return key;
+}
+
 async function withKey<T>(deps: HandlerDeps, s: Session, req: ConfirmRequest, use: (key: ParsedP12, keyId: string) => Promise<T>): Promise<T | null> {
-  const unlocked = await deps.confirm.ask(req, async (keyId, password) => ({ key: await deps.keystore.unlock(keyId, password), keyId }), {
+  const unlocked = await deps.confirm.ask(req, async (keyId, password) => ({ key: await openKey(deps, keyId, password), keyId }), {
     session: s,
     tabId: s.tabId,
     dispose: (v) => wipe(v.key),

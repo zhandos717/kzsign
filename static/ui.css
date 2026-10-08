@@ -140,3 +140,5 @@ details.hash code { display: block; margin-top: 4px; font: 11px/1.4 var(--mono);
 .confirm .keyline .option b { font-size: 13px; }
 .confirm .pw { display: flex; gap: 8px; }
 .confirm .pw .input { flex: 1; }
+[hidden] { display: none !important; }
+.confirm .pw:has(input[hidden]) .btn { flex: 1; }

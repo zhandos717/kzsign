@@ -34,6 +34,13 @@ test.beforeAll(async () => {
   await popup.close();
 });
 
+test.beforeEach(async () => {
+  const p = await ctx.newPage();
+  await p.goto(`chrome-extension://${extId}/popup.html`);
+  await p.evaluate(() => chrome.runtime.sendMessage({ type: "keys.forget" }));
+  await p.close();
+});
+
 test.afterAll(async () => { await ctx?.close(); server?.close(); });
 
 const signFrame = (text: string) => ({ module: "kz.gov.pki.knca.commonUtils", method: "createCAdESFromBase64", args: ["PKCS12", "SIGNATURE", Buffer.from(text).toString("base64"), true] });
@@ -65,6 +72,23 @@ test("подпись: окно показывает сайт и данные, CM
   await page.close();
 });
 
+test("второй раз — без пароля (ключ открыт до закрытия браузера)", async () => {
+  const first = await startSigning("первый");
+  await first.confirm.locator("input[type=password]").fill(PASSWORD);
+  await first.confirm.getByRole("button", { name: "Подписать" }).click();
+  expect((await first.result).code).toBe("200");
+  await first.page.close();
+
+  const second = await startSigning("второй");
+  await expect(second.confirm.locator("input[type=password]")).toBeHidden();
+  await expect(second.confirm.getByText("Ключ открыт до закрытия браузера")).toBeVisible();
+  await second.confirm.getByRole("button", { name: "Подписать" }).click();
+  const res = await second.result;
+  expect(res.code).toBe("200");
+  expect((await verifyCms(new Uint8Array(Buffer.from(res.responseObject, "base64")))).valid).toBe(true);
+  await second.page.close();
+});
+
 test("неверный пароль: окно остаётся с ошибкой, потом верный проходит", async () => {
   const { result, confirm, page } = await startSigning("x");
   await confirm.locator("input[type=password]").fill("wrong");
@@ -94,6 +118,7 @@ test("окно на странице: после ответа оверлей и�
 
 test("Esc → action.canceled", async () => {
   const { result, confirm, page } = await startSigning("x");
+  await expect(confirm.locator("input[type=password]")).toBeVisible();
   await confirm.locator("input[type=password]").press("Escape");
   expect(await result).toEqual({ code: "500", message: "action.canceled" });
   await page.close();

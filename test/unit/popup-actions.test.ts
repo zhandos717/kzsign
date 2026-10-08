@@ -48,3 +48,22 @@ describe("popup actions", () => {
     expect(await handlePopupMessage({ type: "keys.import", file: "%%%", password: "x" }, deps())).toEqual({ error: "BAD_REQUEST" });
   });
 });
+
+describe("запомненные ключи в popup", () => {
+  it("keys.list отдаёт открытые; file.sign без пароля по открытому ключу; keys.forget и keys.remove забывают", async () => {
+    const { createSessionKeys } = await import("../../src/sw/session-keys");
+    const area = memStorage();
+    const d = { ...deps(), sessionKeys: createSessionKeys(area) };
+    const { key } = (await handlePopupMessage({ type: "keys.import", file: b64(readFixture(RSA_PERSONAL)), password: FIXTURE_PASSWORD }, d)) as { key: { id: string } };
+    expect(((await handlePopupMessage({ type: "keys.list" }, d)) as { open: string[] }).open).toEqual([]);
+    await handlePopupMessage({ type: "file.sign", keyId: key.id, password: FIXTURE_PASSWORD, file: b64(new Uint8Array([1])), detached: false }, d);
+    expect(((await handlePopupMessage({ type: "keys.list" }, d)) as { open: string[] }).open).toEqual([key.id]);
+    const r = (await handlePopupMessage({ type: "file.sign", keyId: key.id, file: b64(new Uint8Array([2])), detached: false }, d)) as { cms?: string };
+    expect(r.cms).toBeTruthy();
+    await handlePopupMessage({ type: "keys.forget" }, d);
+    expect(await handlePopupMessage({ type: "file.sign", keyId: key.id, file: b64(new Uint8Array([2])), detached: false }, d)).toEqual({ error: "NEED_PASSWORD" });
+    await handlePopupMessage({ type: "file.sign", keyId: key.id, password: FIXTURE_PASSWORD, file: b64(new Uint8Array([1])), detached: false }, d);
+    await handlePopupMessage({ type: "keys.remove", id: key.id }, d);
+    expect(await d.sessionKeys.ids()).toEqual([]);
+  });
+});

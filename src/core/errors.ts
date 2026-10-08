@@ -7,7 +7,8 @@ export type ErrorCode =
   | "PIN_LOCKED"
   | "NOT_FOUND"
   | "CANCELED"
-  | "TSP_FAILED";
+  | "TSP_FAILED"
+  | "NEED_PASSWORD";
 
 export class KzSignError extends Error {
   constructor(

@@ -114,3 +114,33 @@ describe("handler (режим native)", () => {
     expect(pushed).toEqual(['{"code":"200","responseObject":[]}']);
   });
 });
+
+describe("запомненный ключ (до закрытия браузера)", () => {
+  function memArea() {
+    const m = new Map<string, unknown>();
+    return { get: async (k: string) => structuredClone(m.get(k)), set: async (k: string, v: unknown) => { m.set(k, structuredClone(v)); }, remove: async (k: string) => { m.delete(k); }, keys: async () => [...m.keys()] };
+  }
+
+  it("первая подпись с паролем запоминает ключ, вторая проходит без пароля", async () => {
+    const { createSessionKeys } = await import("../../src/sw/session-keys");
+    const sessionKeys = createSessionKeys(memArea());
+    const answers: (string | undefined)[] = [FIXTURE_PASSWORD, undefined];
+    const confirm: ConfirmLike = { ask: vi.fn(async (_req, verify) => verify(keyId, answers.shift())) };
+    const { h } = session(confirm, { sessionKeys });
+    const frame = common("createCAdESFromBase64", ["PKCS12", "SIGNATURE", b64("x"), true]);
+    expect(JSON.parse((await h.onFrame(frame))!).code).toBe("200");
+    expect(await sessionKeys.ids()).toEqual([keyId]);
+    const second = JSON.parse((await h.onFrame(frame))!);
+    expect(second.code).toBe("200");
+    expect((await verifyCms(unb64(second.responseObject))).valid).toBe(true);
+  });
+
+  it("без пароля и без запомненного ключа → NEED_PASSWORD, окно остаётся", async () => {
+    const { createSessionKeys } = await import("../../src/sw/session-keys");
+    let verifyErr: unknown;
+    const confirm: ConfirmLike = { ask: vi.fn(async (_req, verify) => { try { await verify(keyId, undefined); } catch (e) { verifyErr = e; } return null; }) };
+    const { h } = session(confirm, { sessionKeys: createSessionKeys(memArea()) });
+    await h.onFrame(common("createCAdESFromBase64", ["PKCS12", "SIGNATURE", b64("x"), true]));
+    expect((verifyErr as { code: string }).code).toBe("NEED_PASSWORD");
+  });
+});

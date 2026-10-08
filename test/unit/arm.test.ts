@@ -39,3 +39,20 @@ it("guard: таймер не включает кнопку, пока услов�
   expect(b.disabled).toBe(true);
   vi.useRealTimers();
 });
+
+it("фокус от клика мышью внутри окна не сбрасывает паузу (иначе первый клик теряется); фокус без клика — сбрасывает", () => {
+  vi.useFakeTimers();
+  const b = document.createElement("button");
+  armAfterFocus(b, window, 1000);
+  vi.advanceTimersByTime(1000);
+  expect(b.disabled).toBe(false);
+  window.dispatchEvent(new Event("blur"));
+  window.document.dispatchEvent(new Event("pointerdown"));
+  window.dispatchEvent(new Event("focus"));
+  expect(b.disabled).toBe(false);
+  vi.advanceTimersByTime(1000);
+  window.dispatchEvent(new Event("blur"));
+  window.dispatchEvent(new Event("focus"));
+  expect(b.disabled).toBe(true);
+  vi.useRealTimers();
+});

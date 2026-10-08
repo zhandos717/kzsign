@@ -13,6 +13,7 @@ const app = document.getElementById("app")!;
 const ERRORS: Record<string, string> = {
   BAD_PASSWORD: "Неверный пароль",
   BUSY: "Подождите, идёт проверка пароля",
+  NEED_PASSWORD: "Введите пароль ключа",
   PIN_LOCKED: "Слишком много попыток. Повторите через {s} с",
   MALFORMED_P12: "Ключ повреждён — добавьте его заново",
   NOT_FOUND: "Запрос устарел",
@@ -55,12 +56,12 @@ function documentCard(req: ConfirmRequest) {
 }
 
 async function main() {
-  const res = (await chrome.runtime.sendMessage({ type: "confirm.get", token })) as { req?: ConfirmRequest; keys?: KeyMeta[] };
+  const res = (await chrome.runtime.sendMessage({ type: "confirm.get", token })) as { req?: ConfirmRequest; keys?: KeyMeta[]; open?: string[] };
   if (!res?.req) {
     app.replaceChildren(el("div", { className: "page" }, topbar(), el("div", { className: "content" }, el("div", { className: "note err", textContent: "Запрос не найден или устарел. Повторите действие на сайте." }))));
     return;
   }
-  const { req, keys = [] } = res;
+  const { req, keys = [], open = [] } = res;
   const cards: Node[] = [requesterCard(req)];
   if (req.operation === "sign") cards.push(documentCard(req));
 
@@ -83,6 +84,8 @@ async function main() {
   });
   const password = el("input", { className: "input", type: "password", name: "password", autocomplete: "off", required: true, placeholder: "Пароль ключа", "aria-label": "Пароль ключа" });
   const status = el("p", { className: "error", role: "alert" });
+  const openNote = el("div", { className: "note ok small", textContent: "Ключ открыт до закрытия браузера — пароль не нужен." });
+  const pwHint = el("p", { className: "muted small", style: "margin:0", textContent: "После первой подписи пароль не понадобится до закрытия браузера." });
   const submit = el("button", { type: "submit", className: "btn", textContent: req.operation === "sign" ? "Подписать" : "Разрешить" });
   const form = el("form", { className: "page confirm" },
     topbar("Подтверждение"),
@@ -90,10 +93,22 @@ async function main() {
       keys.length > 1 && el("section", { className: "card" }, el("h2", { textContent: "Подписать ключом" }), pick)),
     el("div", { className: "footer stack" },
       keys.length === 1 && el("div", { className: "keyline" }, pick),
+      openNote,
       el("div", { className: "pw" }, password, submit),
+      pwHint,
       status,
       el("div", { className: "actions" }, cancel)));
   const gate = armAfterFocus(submit, window, 1000, () => visible);
+  const selectedKey = () => (form.elements.namedItem("key") as RadioNodeList | HTMLInputElement | null)?.value ?? "";
+  const syncKeyState = () => {
+    const isOpen = open.includes(selectedKey());
+    password.hidden = isOpen;
+    password.required = !isOpen;
+    openNote.hidden = !isOpen;
+    pwHint.hidden = isOpen;
+  };
+  form.addEventListener("change", syncKeyState);
+  syncKeyState();
   if (inline) {
     // страница может забрать фокус посреди ввода пароля, и остаток уйдёт ей: стираем введённое и просим ввести заново
     let steals = 0;
@@ -119,8 +134,12 @@ async function main() {
     if (!visible || submit.disabled) return;
     submit.disabled = true;
     status.textContent = "";
-    const keyId = (form.elements.namedItem("key") as RadioNodeList).value;
-    const r = await answer({ keyId, password: password.value });
+    const keyId = selectedKey();
+    const r = await answer(open.includes(keyId) ? { keyId } : { keyId, password: password.value });
+    if (!r.ok && r.code === "NEED_PASSWORD") {
+      open.splice(open.indexOf(keyId), 1);
+      syncKeyState();
+    }
     if (r.ok) return;
     password.value = "";
     gate.rearm();
@@ -129,7 +148,7 @@ async function main() {
   app.replaceChildren(form);
 }
 
-async function answer(a: { cancel: true } | { keyId: string; password: string }): Promise<AnswerResult> {
+async function answer(a: { cancel: true } | { keyId: string; password?: string }): Promise<AnswerResult> {
   const r = (await chrome.runtime.sendMessage({ type: "confirm.answer", token, answer: a })) as AnswerResult;
   if (r.ok) window.close();
   return r;

@@ -6,9 +6,11 @@ import { createNativeProxy, type Mode } from "../sw/policy";
 import { httpTsp } from "../core/tsp";
 import { chromeStorage, chromeWindows, openWebSocket, isOwnPage } from "../sw/chrome-adapters";
 import { handlePopupMessage } from "../sw/popup-actions";
+import { createSessionKeys } from "../sw/session-keys";
 
 const storage = chromeStorage(chrome.storage.local);
 const keystore = createKeystore(storage);
+const sessionKeys = createSessionKeys(chromeStorage(chrome.storage.session));
 // Окно на странице — только в верхнем фрейме: во вложенном iframe его легко обрезать или спрятать
 const confirm = createConfirmManager(chromeWindows(), 120_000, async (url, session) => {
   const s = session as Session | undefined;
@@ -20,7 +22,7 @@ const getMode = async () => ((await storage.get("kzsign.mode")) as Mode | undefi
 
 attachRouter(
   chrome.runtime.onConnect,
-  createSessionFactory({ keystore, confirm, getMode, native: createNativeProxy(openWebSocket), tsp: httpTsp((...a) => fetch(...a)) }),
+  createSessionFactory({ keystore, confirm, getMode, native: createNativeProxy(openWebSocket), sessionKeys, tsp: httpTsp((...a) => fetch(...a)) }),
 );
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
@@ -32,11 +34,11 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       if (msg.type === "confirm.fallback") return confirm.fallback(String(msg.token), from).then(() => ({ ok: true }));
       if (msg.type === "confirm.get") {
         const req = confirm.pending(String(msg.token), from);
-        return req ? { req, keys: await keystore.list() } : {};
+        return req ? { req, keys: await keystore.list(), open: await sessionKeys.ids() } : {};
       }
       if (msg.type === "confirm.answer") return confirm.answer(String(msg.token), msg.answer as Answer, from);
     }
-    if (isOwnPage(sender, "popup.html")) return handlePopupMessage(msg, { keystore, storage });
+    if (isOwnPage(sender, "popup.html")) return handlePopupMessage(msg, { keystore, storage, sessionKeys });
     return { error: "FORBIDDEN" };
   };
   run().then(reply, () => reply({ error: "INTERNAL" }));

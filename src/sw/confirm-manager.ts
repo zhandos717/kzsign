@@ -16,7 +16,7 @@ export interface ConfirmRequest {
   items: ConfirmItem[];
   isHash: boolean;
 }
-export type Answer = { keyId: string; password: string } | { cancel: true };
+export type Answer = { keyId: string; password?: string } | { cancel: true };
 export type AnswerResult = { ok: true } | { ok: false; code: ErrorCode | "INTERNAL" | "BUSY"; retryAfterSec?: number };
 export interface WindowsApi {
   open(url: string): Promise<number>;
@@ -56,7 +56,7 @@ export async function describeItems(items: Uint8Array[]): Promise<ConfirmItem[]>
 
 interface Job {
   req: ConfirmRequest;
-  verify: (keyId: string, password: string) => Promise<unknown>;
+  verify: (keyId: string, password: string | undefined) => Promise<unknown>;
   done: (v: unknown) => void;
   session?: object;
   dispose?: (v: unknown) => void;
@@ -146,7 +146,7 @@ export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000, inlin
   }
 
   return {
-    ask<T>(req: ConfirmRequest, verify: (keyId: string, password: string) => Promise<T>, opts: AskOptions<T> = {}): Promise<T | null> {
+    ask<T>(req: ConfirmRequest, verify: (keyId: string, password: string | undefined) => Promise<T>, opts: AskOptions<T> = {}): Promise<T | null> {
       const all = [...queue, ...(active ? [active.job] : [])];
       if (all.length >= MAX_QUEUE) return Promise.resolve(null);
       if (opts.session && all.some((j) => j.session === opts.session)) return Promise.resolve(null);
@@ -200,7 +200,7 @@ export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000, inlin
       if (current.verifying) return { ok: false, code: "BUSY" };
       current.verifying = true;
       try {
-        const value = await current.job.verify(a.keyId, a.password);
+        const value = await current.job.verify(a.keyId, typeof a.password === "string" && a.password !== "" ? a.password : undefined);
         if (active !== current) {
           current.job.dispose?.(value);
           return { ok: false, code: "NOT_FOUND" };

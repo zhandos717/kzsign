@@ -26,7 +26,7 @@ beforeEach(() => { win = fakeWindows(); });
 describe("confirm-manager", () => {
   it("успешное подтверждение: verify вызывается, окно закрывается", async () => {
     const m = createConfirmManager(win);
-    const verify = vi.fn(async (keyId: string, pw: string) => `${keyId}:${pw}`);
+    const verify = vi.fn(async (keyId: string, pw: string | undefined) => `${keyId}:${pw}`);
     const p = m.ask(req, verify);
     await flush();
     const t = tokenOf(win.opened[0]!.url);

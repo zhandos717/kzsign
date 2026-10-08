@@ -29,9 +29,11 @@ async function fileToB64(f: File): Promise<string> {
 
 const app = document.getElementById("app")!;
 let tab: "keys" | "sign" | "settings" = "keys";
+let openIds: string[] = [];
 
 async function render() {
-  const [{ keys = [] }, { mode = "auto" }] = await Promise.all([send<{ keys: KeyMeta[] }>({ type: "keys.list" }), send<{ mode: Mode }>({ type: "mode.get" })]);
+  const [{ keys = [], open = [] }, { mode = "auto" }] = await Promise.all([send<{ keys: KeyMeta[]; open: string[] }>({ type: "keys.list" }), send<{ mode: Mode }>({ type: "mode.get" })]);
+  openIds = open;
   const tabs = el("nav", { className: "tabs", role: "tablist" });
   for (const [id, label] of [["keys", "Ключи"], ["sign", "Подпись"], ["settings", "Настройки"]] as const) {
     tabs.append(el("button", { type: "button", role: "tab", "aria-selected": String(tab === id), textContent: label, onclick: () => { tab = id; void render(); } }));
@@ -56,7 +58,8 @@ function keyCard(k: KeyMeta) {
         k.iin && el("span", { textContent: `ИИН ${k.iin}` }),
         k.bin && el("span", { textContent: `БИН ${k.bin}` }),
         el("span", { className: `badge ${v.tone}`, textContent: v.label }),
-        el("span", { className: "badge", textContent: k.algorithm === "RSA" ? "RSA" : "ГОСТ" }))),
+        el("span", { className: "badge", textContent: k.algorithm === "RSA" ? "RSA" : "ГОСТ" }),
+        openIds.includes(k.id) && el("span", { className: "badge ok", textContent: "открыт", title: "Пароль не нужен до закрытия браузера" }))),
     del);
 }
 
@@ -90,14 +93,19 @@ function keysTab(keys: KeyMeta[]) {
     if (r.error) return void (status.textContent = errorText(r));
     void render();
   };
-  return [el("section", { className: "card" }, el("h2", { textContent: "Мои ключи" }), list), form];
+  const forget = openIds.length
+    ? el("div", { className: "note ok small", style: "display:flex;align-items:center;gap:8px;justify-content:space-between" },
+        el("span", { textContent: "Открытые ключи подписывают без пароля до закрытия браузера." }),
+        el("button", { type: "button", className: "btn ghost", textContent: "Забыть", onclick: async () => { await send({ type: "keys.forget" }); void render(); } }))
+    : null;
+  return [el("section", { className: "card" }, el("h2", { textContent: "Мои ключи" }), list, forget && el("div", { style: "margin-top:10px" }, forget)), form];
 }
 
 function signTab(keys: KeyMeta[]) {
   if (!keys.length) return [el("div", { className: "card empty" }, icon("key"), el("p", { textContent: "Сначала добавьте ключ на вкладке «Ключи»." }))];
   const drop = fileDrop("Файл для подписи");
   const keySel = el("select", { className: "input" }, ...keys.map((k) => el("option", { value: k.id, textContent: `${k.alias}${k.iin ? " · ИИН " + k.iin : ""}` })));
-  const pass = el("input", { className: "input", type: "password", autocomplete: "off" });
+  const pass = el("input", { className: "input", type: "password", autocomplete: "off", placeholder: "Не нужен, если ключ открыт" });
   const detached = el("input", { type: "checkbox" });
   const status = el("p", { className: "error", role: "alert" });
   const done = el("div");

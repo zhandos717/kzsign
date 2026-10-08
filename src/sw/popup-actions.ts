@@ -4,6 +4,8 @@ import { signCms } from "../core/signer";
 import { wipe } from "../core/p12";
 import { KzSignError } from "../core/errors";
 import { toBase64 } from "./proto";
+import { openKey } from "./handler";
+import type { createSessionKeys } from "./session-keys";
 
 const MODES: Mode[] = ["auto", "extension", "native"];
 
@@ -16,13 +18,19 @@ function fromB64(s: unknown): Uint8Array | null {
   }
 }
 
-export async function handlePopupMessage(msg: unknown, deps: { keystore: ReturnType<typeof createKeystore>; storage: Storage }): Promise<unknown> {
+export async function handlePopupMessage(
+  msg: unknown,
+  deps: { keystore: ReturnType<typeof createKeystore>; storage: Storage; sessionKeys?: ReturnType<typeof createSessionKeys> },
+): Promise<unknown> {
   const m = (msg ?? {}) as Record<string, unknown>;
   const { keystore, storage } = deps;
   try {
     switch (m.type) {
       case "keys.list":
-        return { keys: await keystore.list() };
+        return { keys: await keystore.list(), open: (await deps.sessionKeys?.ids()) ?? [] };
+      case "keys.forget":
+        await deps.sessionKeys?.forget(typeof m.id === "string" ? m.id : undefined);
+        return { ok: true };
       case "keys.import": {
         const file = fromB64(m.file);
         if (!file || typeof m.password !== "string") return { error: "BAD_REQUEST" };
@@ -31,6 +39,7 @@ export async function handlePopupMessage(msg: unknown, deps: { keystore: ReturnT
       case "keys.remove":
         if (typeof m.id !== "string") return { error: "BAD_REQUEST" };
         await keystore.remove(m.id);
+        await deps.sessionKeys?.forget(m.id);
         return { ok: true };
       case "mode.get":
         return { mode: ((await storage.get("kzsign.mode")) as Mode | undefined) ?? "auto" };
@@ -40,8 +49,8 @@ export async function handlePopupMessage(msg: unknown, deps: { keystore: ReturnT
         return { ok: true };
       case "file.sign": {
         const file = fromB64(m.file);
-        if (!file || typeof m.keyId !== "string" || typeof m.password !== "string") return { error: "BAD_REQUEST" };
-        const key = await keystore.unlock(m.keyId, m.password);
+        if (!file || typeof m.keyId !== "string") return { error: "BAD_REQUEST" };
+        const key = await openKey(deps, m.keyId, typeof m.password === "string" && m.password !== "" ? m.password : undefined);
         try {
           return { cms: toBase64(await signCms(file, key, { detached: m.detached === true })) };
         } finally {
