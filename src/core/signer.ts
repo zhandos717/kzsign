@@ -2,6 +2,7 @@ import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import type { ParsedP12 } from "./p12";
 import { KzSignError } from "./errors";
+import type { TspClient } from "./tsp";
 import { gost, OID_GOST_DIGEST, OID_GOST_SIGNATURE } from "./crypto/gost";
 import { rsaSign, rsaVerify, OID_SHA256, OID_SHA256_RSA } from "./crypto/rsa";
 
@@ -11,10 +12,13 @@ const OID_CONTENT_TYPE = "1.2.840.113549.1.9.3";
 const OID_MESSAGE_DIGEST = "1.2.840.113549.1.9.4";
 const OID_SIGNING_TIME = "1.2.840.113549.1.9.5";
 const OID_SIGNING_CERT_V2 = "1.2.840.113549.1.9.16.2.47";
+const OID_SIGNATURE_TIMESTAMP = "1.2.840.113549.1.9.16.2.14";
 
 export interface SignOptions {
   detached: boolean;
   signingTime?: Date;
+  /** CAdES-T: метка времени над значением подписи; ошибка TSA — ошибка подписи */
+  tsp?: TspClient;
 }
 
 const sha256 = async (b: Uint8Array) => new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(b)));
@@ -68,6 +72,13 @@ export async function signCms(data: Uint8Array, key: ParsedP12, opts: SignOption
   const toSign = signedAttrsDer(signerInfo);
   const signature = gostKey ? gost.sign(gost.digest(toSign), key.privateKeyPkcs8) : await rsaSign(toSign, key.privateKeyPkcs8);
   signerInfo.signature = new asn1js.OctetString({ valueHex: signature });
+  if (opts.tsp) {
+    const token = await opts.tsp(await digestFor(gostKey, signature), gostKey);
+    signerInfo.unsignedAttrs = new pkijs.SignedAndUnsignedAttributes({
+      type: 1,
+      attributes: [attr(OID_SIGNATURE_TIMESTAMP, asn1js.fromBER(token).result)],
+    });
+  }
 
   const signedData = new pkijs.SignedData({
     version: 1,
