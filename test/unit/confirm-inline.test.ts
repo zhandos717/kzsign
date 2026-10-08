@@ -81,3 +81,56 @@ describe("окно подтверждения на странице", () => {
     expect(win.opened).toHaveLength(1);
   });
 });
+
+describe("ревью безопасности окна на странице", () => {
+  const from = (documentId: string, tabId = 7) => ({ documentId, tabId });
+
+  it("#4 токен привязывается к первому документу, запросившему его; чужой документ получает NOT_FOUND", async () => {
+    const { m, inline } = setup();
+    const p = m.ask(req, async () => "ok", { session: {}, tabId: 7 });
+    await flush();
+    const t = tok(inline.shown[0]!);
+    expect(m.pending(t, from("doc-A"))).toEqual(req);
+    expect(m.pending(t, from("doc-B"))).toBeUndefined();
+    expect(await m.answer(t, { keyId: "k", password: "p" }, from("doc-B"))).toEqual({ ok: false, code: "NOT_FOUND" });
+    expect(await m.answer(t, { keyId: "k", password: "p" }, from("doc-A"))).toEqual({ ok: true });
+    expect(await p).toBe("ok");
+  });
+
+  it("#4 окно на странице может открыть только вкладка, запросившая подпись", async () => {
+    const { m, inline } = setup();
+    void m.ask(req, async () => "ok", { session: {}, tabId: 7 });
+    await flush();
+    expect(m.pending(tok(inline.shown[0]!), from("doc-X", 99))).toBeUndefined();
+  });
+
+  it("#4 после перехода в отдельное окно привязка сбрасывается (новый документ — окно расширения)", async () => {
+    const { m, inline, win } = setup();
+    void m.ask(req, async () => "ok", { session: {}, tabId: 7 });
+    await flush();
+    const t = tok(inline.shown[0]!);
+    m.pending(t, from("doc-inline"));
+    await m.fallback(t, from("doc-other"));
+    expect(win.opened).toHaveLength(0);
+    await m.fallback(t, from("doc-inline"));
+    expect(win.opened).toHaveLength(1);
+    expect(m.pending(t, from("doc-window", 123))).toEqual(req);
+  });
+
+  it("#3 страница удалила оверлей → отдельное окно", async () => {
+    const { m, inline, win } = setup();
+    const S = {};
+    void m.ask(req, async () => "ok", { session: S, tabId: 7 });
+    await flush();
+    m.pending(tok(inline.shown[0]!), from("doc-A"));
+    await m.fallbackSession(S);
+    expect(win.opened).toHaveLength(1);
+  });
+
+  it("#3 не больше 2 запросов с одной вкладки", async () => {
+    const { m } = setup();
+    void m.ask(req, async () => 1, { session: {}, tabId: 7 });
+    void m.ask(req, async () => 2, { session: {}, tabId: 7 });
+    expect(await m.ask(req, async () => 3, { session: {}, tabId: 7 })).toBeNull();
+  });
+});

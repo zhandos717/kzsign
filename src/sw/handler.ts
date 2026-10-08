@@ -12,6 +12,7 @@ import type { TspClient } from "../core/tsp";
 export interface ConfirmLike {
   ask<T>(req: ConfirmRequest, verify: (keyId: string, password: string) => Promise<T>, opts?: AskOptions<T>): Promise<T | null>;
   cancelSession?(session: object): void;
+  fallbackSession?(session: object): Promise<void>;
 }
 interface NativeLike {
   alive(): Promise<boolean>;
@@ -43,6 +44,7 @@ function unsupported(req: Request, reason: string): string {
 async function withKey<T>(deps: HandlerDeps, s: Session, req: ConfirmRequest, use: (key: ParsedP12, keyId: string) => Promise<T>): Promise<T | null> {
   const unlocked = await deps.confirm.ask(req, async (keyId, password) => ({ key: await deps.keystore.unlock(keyId, password), keyId }), {
     session: s,
+    tabId: s.tabId,
     dispose: (v) => wipe(v.key),
   });
   if (!unlocked) return null;
@@ -144,6 +146,9 @@ export function createSessionFactory(deps: HandlerDeps): SessionFactory {
           return null;
         }
         return handleLocally(deps, s, req);
+      },
+      onConfirmGone() {
+        void deps.confirm.fallbackSession?.(s);
       },
       onClose() {
         deps.confirm.cancelSession?.(s);

@@ -133,3 +133,13 @@ describe("управляющие сообщения мосту", () => {
     expect(p.posted).toEqual([{ kind: "control", action: "confirm-show", url: "chrome-extension://x/confirm.html#t" }]);
   });
 });
+
+it("confirm-gone от моста вызывает onConfirmGone", () => {
+  let connect!: (p: unknown) => void;
+  const gone = vi.fn();
+  attachRouter({ addListener: (f: any) => { connect = f; } } as any, () => ({ onFrame: async () => null, onClose: () => {}, onConfirmGone: gone }));
+  const p = fakePort({ origin: "https://a.kz" });
+  connect(p);
+  p.emit({ kind: "confirm-gone" });
+  expect(gone).toHaveBeenCalled();
+});

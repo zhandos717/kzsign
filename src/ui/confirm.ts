@@ -95,6 +95,14 @@ async function main() {
       el("div", { className: "actions" }, cancel)));
   const gate = armAfterFocus(submit, window, 1000, () => visible);
   if (inline) {
+    // страница может забрать фокус посреди ввода пароля, и остаток уйдёт ей: стираем введённое и просим ввести заново
+    let steals = 0;
+    window.addEventListener("blur", () => {
+      if (!password.value) return;
+      password.value = "";
+      status.textContent = "Окно потеряло фокус — введите пароль заново.";
+      if (++steals >= 2) void chrome.runtime.sendMessage({ type: "confirm.fallback", token });
+    });
     watchVisibility(
       form,
       (v) => {

@@ -28,9 +28,13 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (msg?.type?.startsWith("confirm.")) {
       if (!isOwnPage(sender, "confirm.html")) return { error: "FORBIDDEN" };
       if (msg.type === "confirm.ping") return { ok: true };
-      if (msg.type === "confirm.fallback") return confirm.fallback(String(msg.token)).then(() => ({ ok: true }));
-      if (msg.type === "confirm.get") return { req: confirm.pending(msg.token), keys: await keystore.list() };
-      if (msg.type === "confirm.answer") return confirm.answer(String(msg.token), msg.answer as Answer);
+      const from = { documentId: (sender as { documentId?: string }).documentId, tabId: sender.tab?.id };
+      if (msg.type === "confirm.fallback") return confirm.fallback(String(msg.token), from).then(() => ({ ok: true }));
+      if (msg.type === "confirm.get") {
+        const req = confirm.pending(String(msg.token), from);
+        return req ? { req, keys: await keystore.list() } : {};
+      }
+      if (msg.type === "confirm.answer") return confirm.answer(String(msg.token), msg.answer as Answer, from);
     }
     if (isOwnPage(sender, "popup.html")) return handlePopupMessage(msg, { keystore, storage });
     return { error: "FORBIDDEN" };

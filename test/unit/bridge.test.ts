@@ -48,3 +48,18 @@ describe("оверлей подтверждения", () => {
     expect(document.querySelector("kzsign-confirm")).toBeNull();
   });
 });
+
+it("#3 страница удалила оверлей → мост сообщает SW (confirm-gone)", async () => {
+  const listeners: ((m: unknown) => void)[] = [];
+  const posted: unknown[] = [];
+  const port = { onMessage: { addListener: (f: (m: unknown) => void) => listeners.push(f) }, onDisconnect: { addListener: () => {} }, postMessage: (m: unknown) => posted.push(m), disconnect: () => {} };
+  installBridge(window, { connect: () => port } as unknown as typeof chrome.runtime);
+  const ch = new MessageChannel();
+  window.dispatchEvent(new MessageEvent("message", { data: { __kzsign: "hello" }, source: window, ports: [ch.port2] }));
+  ch.port1.postMessage({ id: "s9", kind: "open" });
+  await tick();
+  listeners.forEach((f) => f({ kind: "control", action: "confirm-show", url: "chrome-extension://abc/confirm.html#t" }));
+  document.querySelector("kzsign-confirm")!.remove();
+  await tick();
+  expect(posted).toContainEqual({ kind: "confirm-gone" });
+});

@@ -116,6 +116,31 @@ test("clickjacking: страница перекрыла окно — кнопк�
   await page.close();
 });
 
+test("страница не видит URL окна (токен) через Resource Timing и DOM", async () => {
+  const { result, confirm, page } = await startSigning("x");
+  const leaks = await page.evaluate(() => [
+    ...performance.getEntriesByType("resource").map((e) => e.name),
+    ...performance.getEntriesByType("navigation").map((e) => e.name),
+    document.documentElement.outerHTML,
+    ...Array.from(window.frames, (f) => { try { return f.location.href; } catch { return ""; } }),
+  ].filter((x) => x.includes("confirm.html")));
+  expect(leaks).toEqual([]);
+  await confirm.getByRole("button", { name: "Отмена" }).click();
+  await result;
+  await page.close();
+});
+
+test("кража фокуса: страница забрала фокус посреди ввода → пароль стёрт", async () => {
+  const { result, confirm, page } = await startSigning("x");
+  await confirm.locator("input[type=password]").fill("Qwer");
+  await page.evaluate(() => { const i = document.createElement("input"); document.body.append(i); i.focus(); });
+  await expect(confirm.locator("input[type=password]")).toHaveValue("");
+  await expect(confirm.locator(".error")).toContainText("потеряло фокус");
+  await confirm.getByRole("button", { name: "Отмена" }).click();
+  await result;
+  await page.close();
+});
+
 test("запрос из вложенного iframe другого домена → отдельное окно; закрытие окна → action.canceled", async () => {
   const page = await ctx.newPage();
   await page.goto(base);

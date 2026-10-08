@@ -60,8 +60,16 @@ interface Job {
   done: (v: unknown) => void;
   session?: object;
   dispose?: (v: unknown) => void;
+  tabId?: number;
+}
+/** Кто обращается к окну подтверждения: документ (sender.documentId) и вкладка */
+export interface Caller {
+  documentId?: string;
+  tabId?: number;
 }
 export interface AskOptions<T> {
+  /** вкладка, откуда пришёл запрос: лимит запросов на вкладку и проверка, что окно на странице открыто именно там */
+  tabId?: number;
   /** запросы одной сессии (сокета): не больше одного в очереди, снимаются при её закрытии */
   session?: object;
   /** освобождает результат verify, если он пришёл после отмены */
@@ -75,6 +83,7 @@ export interface InlineHandle {
 export type InlinePresenter = (url: string, session: object | undefined) => Promise<InlineHandle | null>;
 
 const INLINE_LOAD_TIMEOUT_MS = 2000;
+const MAX_PER_TAB = 2;
 
 export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000, inline?: InlinePresenter) {
   const queue: Job[] = [];
@@ -84,6 +93,7 @@ export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000, inlin
     windowId: number | null;
     inline: InlineHandle | null;
     seen: boolean;
+    owner: string | null;
     timer: ReturnType<typeof setTimeout>;
     verifying: boolean;
   } | null = null;
@@ -107,7 +117,7 @@ export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000, inlin
     if (active || !queue.length) return;
     const job = queue.shift()!;
     const token = hex(crypto.getRandomValues(new Uint8Array(16)).buffer);
-    active = { job, token, windowId: null, inline: null, seen: false, timer: setTimeout(() => finish(null), timeoutMs), verifying: false };
+    active = { job, token, windowId: null, inline: null, seen: false, owner: null, timer: setTimeout(() => finish(null), timeoutMs), verifying: false };
     const current = active;
     const url = `confirm.html#${token}`;
     const handle = inline ? await inline(url, job.session).catch(() => null) : null;
@@ -125,6 +135,7 @@ export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000, inlin
     current.inline?.close();
     current.inline = null;
     current.seen = false;
+    current.owner = null;
     try {
       const id = await win.open(`confirm.html#${current.token}`);
       if (active === current) current.windowId = id;
@@ -139,8 +150,9 @@ export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000, inlin
       const all = [...queue, ...(active ? [active.job] : [])];
       if (all.length >= MAX_QUEUE) return Promise.resolve(null);
       if (opts.session && all.some((j) => j.session === opts.session)) return Promise.resolve(null);
+      if (opts.tabId !== undefined && all.filter((j) => j.tabId === opts.tabId).length >= MAX_PER_TAB) return Promise.resolve(null);
       return new Promise<T | null>((resolve) => {
-        queue.push({ req, verify, done: resolve as (v: unknown) => void, session: opts.session, dispose: opts.dispose as ((v: unknown) => void) | undefined });
+        queue.push({ req, verify, done: resolve as (v: unknown) => void, session: opts.session, dispose: opts.dispose as ((v: unknown) => void) | undefined, tabId: opts.tabId });
         void pump();
       });
     },
@@ -153,19 +165,33 @@ export function createConfirmManager(win: WindowsApi, timeoutMs = 120_000, inlin
       if (active?.job.session === session) finish(null);
     },
 
-    pending(token: string): ConfirmRequest | undefined {
+    // Токен привязывается к первому документу, открывшему окно: даже узнав токен, другая страница не сможет ответить.
+    // Окно на странице должно открыться в той же вкладке, откуда пришёл запрос.
+    pending(token: string, from: Caller = {}): ConfirmRequest | undefined {
       if (!active || active.token !== token) return undefined;
+      if (active.inline && active.job.tabId !== undefined && from.tabId !== active.job.tabId) return undefined;
+      const who = from.documentId ?? "";
+      if (active.owner !== null && active.owner !== who) return undefined;
+      active.owner = who;
       active.seen = true;
       return active.job.req;
     },
 
-    /** окно на странице не может подтвердить свою видимость — показываем отдельное окно */
-    async fallback(token: string): Promise<void> {
-      if (active && active.token === token && active.inline) await toWindow(active);
+    /** страница убрала оверлей — показываем запрос этой сессии в отдельном окне */
+    async fallbackSession(session: object): Promise<void> {
+      if (active && active.job.session === session && active.inline) await toWindow(active);
     },
 
-    async answer(token: string, a: Answer): Promise<AnswerResult> {
+    /** окно на странице не может подтвердить свою видимость — показываем отдельное окно */
+    async fallback(token: string, from: Caller = {}): Promise<void> {
+      if (!active || active.token !== token || !active.inline) return;
+      if (active.owner !== null && active.owner !== (from.documentId ?? "")) return;
+      await toWindow(active);
+    },
+
+    async answer(token: string, a: Answer, from: Caller = {}): Promise<AnswerResult> {
       if (!active || active.token !== token) return { ok: false, code: "NOT_FOUND" };
+      if (active.owner !== null && active.owner !== (from.documentId ?? "")) return { ok: false, code: "NOT_FOUND" };
       if ("cancel" in a) {
         finish(null);
         return { ok: true };
