@@ -72,3 +72,14 @@ describe("parseFrame", () => {
     expect(JSON.parse(fail(r, "MODULE_NOT_FOUND", "x.y"))).toMatchObject({ status: false, code: "MODULE_NOT_FOUND" });
   });
 });
+
+describe("basics: decode=false — данные обычным текстом", () => {
+  it("строка без base64 кодируется в UTF-8", () => {
+    const r = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "cms", data: "Привет, мир", signingParams: { decode: false } } }));
+    expect(r.parsed).toMatchObject({ kind: "sign", data: [new TextEncoder().encode("Привет, мир")] });
+  });
+  it("decode по умолчанию — base64", () => {
+    const r = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "cms", data: "aGk=", signingParams: {} } }));
+    expect(r.parsed).toMatchObject({ data: [new TextEncoder().encode("hi")] });
+  });
+});

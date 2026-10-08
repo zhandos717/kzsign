@@ -15,6 +15,9 @@ function isNcaLayer(url: string, base: string): boolean {
   }
 }
 
+// crypto.randomUUID есть только в secure context, а NCALayer вызывают и с http-сайтов
+const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+
 export function installShim(win: Window, connect: () => MessagePort): void {
   const w = win as Window & { [INSTALLED]?: boolean; WebSocket: typeof WebSocket };
   if (w[INSTALLED]) return;
@@ -78,7 +81,7 @@ export function installShim(win: Window, connect: () => MessagePort): void {
     bufferedAmount = 0;
     readyState = 0;
     private readonly handlers = new Map<string, EventListener>();
-    private readonly id = crypto.randomUUID();
+    private readonly id = newId();
 
     constructor(url: string | URL, protocols?: string | string[]) {
       const href = String(url);

@@ -14,7 +14,11 @@ let server: Server;
 let base: string;
 
 test.beforeAll(async () => {
-  server = createServer((_, res) => { res.setHeader("content-type", "text/html"); res.end(readFileSync("test/e2e/page.html")); });
+  server = createServer((req, res) => {
+    if (req.url === "/ncalayer-client.js") { res.setHeader("content-type", "text/javascript"); return res.end(readFileSync("node_modules/ncalayer-js-client/ncalayer-client.js")); }
+    res.setHeader("content-type", "text/html");
+    res.end(readFileSync(req.url === "/client" ? "test/e2e/ncalayer-client.html" : "test/e2e/page.html"));
+  });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   base = `http://localhost:${(server.address() as { port: number }).port}/`;
   ctx = await chromium.launchPersistentContext("", { channel: "chromium", args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`] });
@@ -90,5 +94,28 @@ test("обычные WebSocket сайта не перехватываются", 
     return Object.prototype.toString.call(ws);
   });
   expect(tag).toBe("[object WebSocket]");
+  await page.close();
+});
+
+test("сайт на ncalayer-js-client: connect + basicsSignCMS (как на госпорталах)", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "client");
+  const confirmP = ctx.waitForEvent("page", (p) => p.url().includes("confirm.html"));
+  const result = page.evaluate(async () => {
+    const { NCALayerClient } = window as any;
+    const client = new NCALayerClient();
+    const version = await client.connect();
+    const params = { ...NCALayerClient.basicsCMSParamsAttached, tsaProfile: undefined };
+    const cms = await client.basicsSignCMS(NCALayerClient.basicsStorageAll, "Текст договора", { ...params, decode: false }, NCALayerClient.basicsSignerAny);
+    return { version, cms };
+  });
+  const confirm = await confirmP;
+  await expect(confirm.locator(".preview")).toHaveText("Текст договора");
+  await confirm.locator("input[type=password]").fill(PASSWORD);
+  await confirm.getByRole("button", { name: "Подписать" }).click();
+  const { version, cms } = await result;
+  expect(version).toBe("1.4");
+  const der = new Uint8Array(Buffer.from(String(cms).replace(/-----[A-Z ]+-----|\s/g, ""), "base64"));
+  expect((await verifyCms(der)).valid).toBe(true);
   await page.close();
 });

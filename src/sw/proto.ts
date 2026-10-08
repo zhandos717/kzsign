@@ -66,9 +66,10 @@ function parseBasics(method: string, args: unknown): Request {
   const format = a.format ?? "cms";
   if (format !== "cms") return { dialect: "basics", parsed: { kind: "unsupported", reason: String(format) }, tsa: false };
   const items = Array.isArray(a.data) ? a.data : [a.data];
-  const data = items.map(fromBase64);
-  if (!data.length || data.some((d) => !d)) return invalid("basics", "base64");
   const sp = a.signingParams ?? {};
+  const decode = isFalse(sp.decode) ? (s: unknown) => (typeof s === "string" ? new TextEncoder().encode(s) : null) : fromBase64;
+  const data = items.map(decode);
+  if (!data.length || data.some((d) => !d)) return invalid("basics", "base64");
   const isHash = isTrue(sp.digested);
   return {
     dialect: "basics",

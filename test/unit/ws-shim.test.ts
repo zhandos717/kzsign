@@ -103,3 +103,20 @@ describe("ws-shim", () => {
     expect(ws.readyState).toBe(3);
   });
 });
+
+describe("ws-shim на http-странице (не secure context)", () => {
+  it("работает без crypto.randomUUID", async () => {
+    const original = crypto.randomUUID;
+    Object.defineProperty(crypto, "randomUUID", { value: undefined, configurable: true });
+    try {
+      const win = { WebSocket: vi.fn() } as unknown as Window;
+      const ch = new MessageChannel();
+      installShim(win, () => ch.port1);
+      const ws = new (win as any).WebSocket("wss://127.0.0.1:13579/");
+      await tick();
+      expect(ws.readyState).toBe(1);
+    } finally {
+      Object.defineProperty(crypto, "randomUUID", { value: original, configurable: true });
+    }
+  });
+});
