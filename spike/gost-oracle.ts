@@ -56,7 +56,7 @@ const curveEntries = Object.entries(curves).filter(([k]) => k.startsWith("ID_GOS
 const matches: unknown[] = [];
 for (const [curveName, curve] of curveEntries)
   for (const [hn, h] of Object.entries(hashes)) for (const [pn, p] of Object.entries(pubs)) for (const [sn, s] of Object.entries(sigs)) {
-    try { if (curves.verify(curve as any, p, h, s)) matches.push({ curveName, hn, pn, sn }); } catch (e) { if (!globalThis.__e) { (globalThis as any).__e = 1; console.log("verify err", String(e)); } }
+    try { if (curves.verify(curve as any, p, h, s)) matches.push({ curveName, hn, pn, sn }); } catch (e) { if (!(globalThis as any).__e) { (globalThis as any).__e = 1; console.log("verify err", String(e)); } }
   }
 console.log("MATCHES", JSON.stringify(matches));
 
