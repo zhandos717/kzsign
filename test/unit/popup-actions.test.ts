@@ -87,3 +87,13 @@ describe("история в popup", () => {
     expect(((await handlePopupMessage({ type: "history.list" }, d)) as { entries: unknown[] }).entries).toEqual([]);
   });
 });
+
+it("доверенные сайты: sites.list / sites.remove", async () => {
+  const { createTrustedSites } = await import("../../src/sw/trusted-sites");
+  const trusted = createTrustedSites(memStorage());
+  await trusted.add("https://egov.kz");
+  const d = { ...deps(), trusted };
+  expect(((await handlePopupMessage({ type: "sites.list" }, d)) as { sites: { origin: string }[] }).sites.map((s) => s.origin)).toEqual(["https://egov.kz"]);
+  await handlePopupMessage({ type: "sites.remove", origin: "https://egov.kz" }, d);
+  expect(((await handlePopupMessage({ type: "sites.list" }, d)) as { sites: unknown[] }).sites).toEqual([]);
+});

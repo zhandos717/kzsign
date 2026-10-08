@@ -7,6 +7,7 @@ import { toBase64 } from "./proto";
 import { openKey } from "./handler";
 import type { createSessionKeys } from "./session-keys";
 import type { createHistory } from "./history";
+import type { createTrustedSites } from "./trusted-sites";
 import { keyLabel } from "./handler";
 import { describeItems } from "./confirm-manager";
 
@@ -28,6 +29,7 @@ export async function handlePopupMessage(
     storage: Storage;
     sessionKeys?: ReturnType<typeof createSessionKeys>;
     history?: ReturnType<typeof createHistory>;
+    trusted?: ReturnType<typeof createTrustedSites>;
   },
 ): Promise<unknown> {
   const m = (msg ?? {}) as Record<string, unknown>;
@@ -91,6 +93,12 @@ export async function handlePopupMessage(
       case "history.remove":
         if (typeof m.id !== "string") return { error: "BAD_REQUEST" };
         await deps.history?.remove(m.id);
+        return { ok: true };
+      case "sites.list":
+        return { sites: (await deps.trusted?.list()) ?? [] };
+      case "sites.remove":
+        if (typeof m.origin !== "string") return { error: "BAD_REQUEST" };
+        await deps.trusted?.remove(m.origin);
         return { ok: true };
       case "history.clear":
         await deps.history?.clear();

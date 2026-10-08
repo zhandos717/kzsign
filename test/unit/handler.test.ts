@@ -170,3 +170,17 @@ describe("история подписей", () => {
     expect(list[1]!.key).toBeUndefined();
   });
 });
+
+it("firstVisit: незнакомый сайт помечается, знакомый — нет", async () => {
+  const { createTrustedSites } = await import("../../src/sw/trusted-sites");
+  const m = new Map<string, unknown>();
+  const trusted = createTrustedSites({ get: async (k) => m.get(k), set: async (k, v) => { m.set(k, v); }, remove: async (k) => { m.delete(k); }, keys: async () => [...m.keys()] });
+  const confirm: ConfirmLike = { ask: vi.fn(async () => null) };
+  const frame = common("createCAdESFromBase64", ["PKCS12", "SIGNATURE", b64("x"), true]);
+  await session(confirm, { trusted }).h.onFrame(frame);
+  await trusted.add("https://a.kz");
+  await session(confirm, { trusted }).h.onFrame(common("getKeyInfo", ["PKCS12"]));
+  const calls = (confirm.ask as ReturnType<typeof vi.fn>).mock.calls;
+  expect(calls[0]![0].firstVisit).toBe(true);
+  expect(calls[1]![0].firstVisit).toBe(false);
+});

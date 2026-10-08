@@ -15,8 +15,10 @@ export interface ConfirmRequest {
   operation: "keyInfo" | "sign";
   items: ConfirmItem[];
   isHash: boolean;
+  /** сайт не отмечен пользователем как знакомый */
+  firstVisit?: boolean;
 }
-export type Answer = { keyId: string; password?: string } | { cancel: true };
+export type Answer = { keyId: string; password?: string; trustSite?: boolean } | { cancel: true };
 export type AnswerResult = { ok: true } | { ok: false; code: ErrorCode | "INTERNAL" | "BUSY"; retryAfterSec?: number };
 export interface WindowsApi {
   open(url: string): Promise<number>;

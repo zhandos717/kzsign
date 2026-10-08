@@ -8,11 +8,14 @@ import { chromeStorage, chromeWindows, openWebSocket, isOwnPage } from "../sw/ch
 import { handlePopupMessage } from "../sw/popup-actions";
 import { createSessionKeys } from "../sw/session-keys";
 import { createHistory } from "../sw/history";
+import { createTrustedSites } from "../sw/trusted-sites";
+import { handleConfirmMessage } from "../sw/confirm-actions";
 
 const storage = chromeStorage(chrome.storage.local);
 const keystore = createKeystore(storage);
 const sessionKeys = createSessionKeys(chromeStorage(chrome.storage.session));
 const history = createHistory(storage);
+const trusted = createTrustedSites(storage);
 // Окно на странице — только в верхнем фрейме: во вложенном iframe его легко обрезать или спрятать
 const confirm = createConfirmManager(chromeWindows(), 120_000, async (url, session) => {
   const s = session as Session | undefined;
@@ -24,23 +27,17 @@ const getMode = async () => ((await storage.get("kzsign.mode")) as Mode | undefi
 
 attachRouter(
   chrome.runtime.onConnect,
-  createSessionFactory({ keystore, confirm, getMode, native: createNativeProxy(openWebSocket), sessionKeys, history, tsp: httpTsp((...a) => fetch(...a)) }),
+  createSessionFactory({ keystore, confirm, getMode, native: createNativeProxy(openWebSocket), sessionKeys, history, trusted, tsp: httpTsp((...a) => fetch(...a)) }),
 );
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const run = async () => {
     if (msg?.type?.startsWith("confirm.")) {
       if (!isOwnPage(sender, "confirm.html")) return { error: "FORBIDDEN" };
-      if (msg.type === "confirm.ping") return { ok: true };
       const from = { documentId: (sender as { documentId?: string }).documentId, tabId: sender.tab?.id };
-      if (msg.type === "confirm.fallback") return confirm.fallback(String(msg.token), from).then(() => ({ ok: true }));
-      if (msg.type === "confirm.get") {
-        const req = confirm.pending(String(msg.token), from);
-        return req ? { req, keys: await keystore.list(), open: await sessionKeys.ids() } : {};
-      }
-      if (msg.type === "confirm.answer") return confirm.answer(String(msg.token), msg.answer as Answer, from);
+      return handleConfirmMessage(msg, from, { confirm, keystore, trusted, sessionKeys });
     }
-    if (isOwnPage(sender, "popup.html")) return handlePopupMessage(msg, { keystore, storage, sessionKeys, history });
+    if (isOwnPage(sender, "popup.html")) return handlePopupMessage(msg, { keystore, storage, sessionKeys, history, trusted });
     return { error: "FORBIDDEN" };
   };
   run().then(reply, () => reply({ error: "INTERNAL" }));

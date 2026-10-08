@@ -10,6 +10,7 @@ import { KzSignError } from "../core/errors";
 import type { TspClient } from "../core/tsp";
 import type { createSessionKeys } from "./session-keys";
 import type { createHistory, HistoryInput } from "./history";
+import type { createTrustedSites } from "./trusted-sites";
 
 export interface ConfirmLike {
   ask<T>(req: ConfirmRequest, verify: (keyId: string, password: string | undefined) => Promise<T>, opts?: AskOptions<T>): Promise<T | null>;
@@ -29,6 +30,7 @@ export interface HandlerDeps {
   /** ключи, открытые паролем до закрытия браузера */
   sessionKeys?: ReturnType<typeof createSessionKeys>;
   history?: ReturnType<typeof createHistory>;
+  trusted?: ReturnType<typeof createTrustedSites>;
 }
 
 const VERSION_MSG = /^\s*\{\s*"result"\s*:\s*\{\s*"version"/;
@@ -57,7 +59,8 @@ export async function openKey(deps: Pick<HandlerDeps, "keystore" | "sessionKeys"
   return key;
 }
 
-async function withKey<T>(deps: HandlerDeps, s: Session, req: ConfirmRequest, use: (key: ParsedP12, keyId: string) => Promise<T>): Promise<T | null> {
+async function withKey<T>(deps: HandlerDeps, s: Session, base: Omit<ConfirmRequest, "firstVisit">, use: (key: ParsedP12, keyId: string) => Promise<T>): Promise<T | null> {
+  const req: ConfirmRequest = { ...base, firstVisit: deps.trusted ? !(await deps.trusted.has(s.origin)) : undefined };
   const unlocked = await deps.confirm.ask(req, async (keyId, password) => ({ key: await openKey(deps, keyId, password), keyId }), {
     session: s,
     tabId: s.tabId,
