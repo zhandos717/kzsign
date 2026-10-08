@@ -1,6 +1,6 @@
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
-import { ID_GOSTR3410_2012_512_PARAM_SET_A as CURVE, sign as curveSign, verify as curveVerify } from "@li0ard/gostcurves";
+import { ID_GOSTR3410_2012_512_PARAM_SET_A as CURVE, getPublicKey, sign as curveSign, verify as curveVerify } from "@li0ard/gostcurves";
 import { streebog512 } from "@li0ard/streebog";
 
 // Параметры и порядок байтов НУЦ подтверждены на подписи тестового УЦ: docs/decisions/0001-gost-engine.md
@@ -13,6 +13,7 @@ export interface GostEngine {
   sign(digest: Uint8Array, pkcs8: Uint8Array): Uint8Array;
   verify(digest: Uint8Array, signature: Uint8Array, publicKey: Uint8Array): boolean;
   publicKeyFromCert(certDer: Uint8Array): Uint8Array;
+  publicKeyFromPrivate(pkcs8: Uint8Array): Uint8Array;
 }
 
 const reverse = (b: Uint8Array) => Uint8Array.from(b).reverse();
@@ -27,16 +28,27 @@ function privateScalar(pkcs8: Uint8Array): Uint8Array {
   return new Uint8Array(inner.valueBlock.valueHexView);
 }
 
+// Библиотека держит скаляр как bigint, его не стереть; затираем хотя бы свои копии
+function withScalar<T>(pkcs8: Uint8Array, fn: (scalarLe: Uint8Array) => T): T {
+  const raw = privateScalar(pkcs8);
+  const scalar = reverse(raw);
+  try {
+    return fn(scalar);
+  } finally {
+    raw.fill(0);
+    scalar.fill(0);
+  }
+}
+
 export const gost: GostEngine = {
   digest: (data) => streebog512(data),
 
   sign(digest, pkcs8) {
-    const scalar = reverse(privateScalar(pkcs8));
-    try {
-      return reverseHalves(curveSign(CURVE, scalar, reverse(digest)));
-    } finally {
-      scalar.fill(0);
-    }
+    return withScalar(pkcs8, (scalar) => reverseHalves(curveSign(CURVE, scalar, reverse(digest))));
+  },
+
+  publicKeyFromPrivate(pkcs8) {
+    return withScalar(pkcs8, (scalar) => reverseHalves(getPublicKey(CURVE, scalar).subarray(1)));
   },
 
   verify(digest, signature, publicKey) {

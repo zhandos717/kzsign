@@ -1,4 +1,4 @@
-export type ErrorCode = "BAD_PASSWORD" | "UNSUPPORTED_ALGORITHM" | "MALFORMED_P12" | "NO_KEY";
+export type ErrorCode = "BAD_PASSWORD" | "UNSUPPORTED_ALGORITHM" | "MALFORMED_P12" | "NO_KEY" | "MALFORMED_CMS";
 
 export class KzSignError extends Error {
   constructor(public readonly code: ErrorCode, message: string) {

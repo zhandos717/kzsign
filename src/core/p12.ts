@@ -2,6 +2,7 @@ import forge from "node-forge";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { KzSignError } from "./errors";
+import { gost } from "./crypto/gost";
 
 export type KeyAlgorithm = "GOST2015_512" | "RSA";
 
@@ -53,7 +54,22 @@ function keyAlgorithmOid(pkcs8: forge.asn1.Asn1): string {
   return forge.asn1.derToOid(oid.value as string);
 }
 
-const localKeyId = (bag: forge.pkcs12.Bag) => bag.attributes?.localKeyId?.[0] as string | undefined;
+function publicKeyMatches(algorithm: KeyAlgorithm, keyBag: forge.pkcs12.Bag, pkcs8: Uint8Array, certDer: Uint8Array): boolean {
+  try {
+    if (algorithm === "RSA") {
+      const cert = forge.pki.certificateFromAsn1(forge.asn1.fromDer(toBin(certDer)));
+      return (cert.publicKey as forge.pki.rsa.PublicKey).n.equals((keyBag.key as forge.pki.rsa.PrivateKey).n);
+    }
+    return hex(gost.publicKeyFromPrivate(pkcs8)) === hex(gost.publicKeyFromCert(certDer));
+  } catch {
+    return false;
+  }
+}
+
+/** Затирает копию закрытого ключа. Копии внутри forge и криптобиблиотек JS стереть нельзя — см. docs/decisions/0001. */
+export function wipe(parsed: ParsedP12): void {
+  parsed.privateKeyPkcs8.fill(0);
+}
 
 export function parseP12(der: Uint8Array, password: string): ParsedP12 {
   let asn1: forge.asn1.Asn1;
@@ -82,22 +98,26 @@ export function parseP12(der: Uint8Array, password: string): ParsedP12 {
     : (keyBag.asn1 as forge.asn1.Asn1 | undefined);
   if (!pkcs8Asn1) throw new KzSignError("BAD_PASSWORD", "не удалось расшифровать ключ");
 
-  const oid = keyAlgorithmOid(pkcs8Asn1);
+  let oid: string;
+  try {
+    oid = keyAlgorithmOid(pkcs8Asn1);
+  } catch {
+    // без MAC неверный пароль даёт мусор, который иногда разбирается как ASN.1
+    throw new KzSignError("BAD_PASSWORD", "не удалось расшифровать ключ");
+  }
   if (oid === OID_GOST2004) throw new KzSignError("UNSUPPORTED_ALGORITHM", "ГОСТ 34.310-2004 не поддерживается");
   const algorithm: KeyAlgorithm | null = oid === OID_RSA ? "RSA" : oid === OID_GOST2015 ? "GOST2015_512" : null;
   if (!algorithm) throw new KzSignError("UNSUPPORTED_ALGORITHM", `алгоритм ${oid}`);
 
-  const keyId = localKeyId(keyBag);
+  const privateKeyPkcs8 = derOf(pkcs8Asn1);
   const certs = bags
     .filter((b) => b.type === forge.pki.oids.certBag)
-    .map((b) => ({ id: localKeyId(b), der: b.cert ? derOf(forge.pki.certificateToAsn1(b.cert)) : certFromBag(b.asn1 as forge.asn1.Asn1) }));
-  const own = certs.find((c) => keyId !== undefined && c.id === keyId) ?? certs[0];
-  if (!own) throw new KzSignError("MALFORMED_P12", "в файле нет сертификата");
+    .map((b) => (b.cert ? derOf(forge.pki.certificateToAsn1(b.cert)) : certFromBag(b.asn1 as forge.asn1.Asn1)));
+  const own = certs.find((c) => publicKeyMatches(algorithm, keyBag, privateKeyPkcs8, c));
+  if (!own) {
+    privateKeyPkcs8.fill(0);
+    throw new KzSignError("MALFORMED_P12", "нет сертификата для закрытого ключа");
+  }
 
-  return {
-    algorithm,
-    privateKeyPkcs8: derOf(pkcs8Asn1),
-    certificateDer: own.der,
-    chainDer: certs.filter((c) => hex(c.der) !== hex(own.der)).map((c) => c.der),
-  };
+  return { algorithm, privateKeyPkcs8, certificateDer: own, chainDer: certs.filter((c) => hex(c) !== hex(own)) };
 }

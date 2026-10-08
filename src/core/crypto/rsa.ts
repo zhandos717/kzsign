@@ -10,7 +10,8 @@ const buf = (b: Uint8Array) => new Uint8Array(b) as Uint8Array<ArrayBuffer>;
 const ALG = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as const;
 
 export async function rsaSign(data: Uint8Array, pkcs8: Uint8Array): Promise<Uint8Array> {
-  const key = await crypto.subtle.importKey("pkcs8", buf(pkcs8), ALG, false, ["sign"]);
+  const copy = buf(pkcs8);
+  const key = await crypto.subtle.importKey("pkcs8", copy, ALG, false, ["sign"]).finally(() => copy.fill(0));
   return new Uint8Array(await crypto.subtle.sign(ALG, key, buf(data)));
 }
 
