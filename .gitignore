@@ -3,3 +3,5 @@ dist/
 out/
 *.wasm
 .superpowers/
+test-results/
+playwright-report/
