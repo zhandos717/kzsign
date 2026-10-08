@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "KZSign",
+  "version": "0.1.0",
+  "description": "Подпись ЭЦП НУЦ РК в браузере без NCALayer",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["http://tsp.pki.gov.kz/*"],
+  "background": { "service_worker": "sw.js", "type": "module" },
+  "content_scripts": [
+    { "matches": ["<all_urls>"], "js": ["shim.js"], "run_at": "document_start", "all_frames": true, "world": "MAIN", "match_about_blank": true },
+    { "matches": ["<all_urls>"], "js": ["bridge.js"], "run_at": "document_start", "all_frames": true, "match_about_blank": true }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "KZSign" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'" }
+}
