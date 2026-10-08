@@ -4,6 +4,7 @@ import type { createKeystore } from "./keystore";
 import { describeItems, type ConfirmRequest, type AskOptions } from "./confirm-manager";
 import { decide, type Mode } from "./policy";
 import { signCms } from "../core/signer";
+import { signXml } from "../core/xmldsig";
 import { wipe, type ParsedP12 } from "../core/p12";
 import { certInfo } from "../core/cert-info";
 import { KzSignError } from "../core/errors";
@@ -95,8 +96,13 @@ async function sign(deps: HandlerDeps, s: Session, req: Request, p: SignRequest)
       .catch(() => {});
   let usedKey: HistoryInput["key"];
   try {
-    const cms = await withKey(deps, s, { origin: s.origin, operation: "sign", items, isHash: p.isHash }, async (key, keyId) => {
+    const cms = await withKey(deps, s, { origin: s.origin, operation: "sign", items, isHash: p.isHash, format: p.format }, async (key, keyId) => {
       usedKey = await keyLabel(deps, keyId);
+      if (p.format === "xml") {
+        const xmls: string[] = [];
+        for (const data of p.data) xmls.push(await signXml(new TextDecoder().decode(data), key));
+        return xmls;
+      }
       const out: Uint8Array[] = [];
       for (const data of p.data) out.push(await signCms(data, key, { detached: p.detached, tsp: req.tsa ? deps.tsp : undefined }));
       return out;

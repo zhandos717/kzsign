@@ -49,7 +49,7 @@ function header(req: ConfirmRequest) {
 
 function siteBox(req: ConfirmRequest, trust: HTMLInputElement) {
   const h = splitHost(req.origin);
-  const kind = req.operation === "keyInfo" ? "Данные сертификата" : req.isHash ? "Подпись хэша (CMS)" : "CMS-подпись";
+  const kind = req.operation === "keyInfo" ? "Данные сертификата" : req.format === "xml" ? "XML-подпись" : req.isHash ? "Подпись хэша (CMS)" : "CMS-подпись";
   const box = el("div", { className: "box site" },
     el("div", { className: "row" },
       el("div", { className: "tile" }, icon("globe")),

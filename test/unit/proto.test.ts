@@ -18,7 +18,7 @@ describe("parseFrame", () => {
   });
   it("getKeyInfo", () => expect(parseFrame(common("getKeyInfo", ["PKCS12"])).parsed.kind).toBe("keyInfo"));
   it("createCAdESFromBase64 attached", () => {
-    expect(parseFrame(common("createCAdESFromBase64", ["PKCS12", "SIGNATURE", "aGk=", true])).parsed).toEqual({ kind: "sign", data: [hi], detached: false, isHash: false, batch: false });
+    expect(parseFrame(common("createCAdESFromBase64", ["PKCS12", "SIGNATURE", "aGk=", true])).parsed).toEqual({ kind: "sign", format: "cms", data: [hi], detached: false, isHash: false, batch: false });
   });
   it("createCAdESFromBase64 detached", () => {
     expect(parseFrame(common("createCAdESFromBase64", ["PKCS12", "SIGNATURE", "aGk=", false])).parsed).toMatchObject({ detached: true });
@@ -31,7 +31,7 @@ describe("parseFrame", () => {
   });
   it("basics sign пачкой, detached, ответ PEM", () => {
     const r = parseFrame(basics({ format: "cms", data: ["aGk=", "aGk="], signingParams: { encapsulate: "false" } }));
-    expect(r.parsed).toEqual({ kind: "sign", data: [hi, hi], detached: true, isHash: false, batch: true });
+    expect(r.parsed).toEqual({ kind: "sign", format: "cms", data: [hi, hi], detached: true, isHash: false, batch: true });
     const res = JSON.parse(ok(r, [new Uint8Array(100), new Uint8Array(1)]));
     expect(res.status).toBe(true);
     expect(res.body.result).toHaveLength(2);
@@ -43,13 +43,13 @@ describe("parseFrame", () => {
     expect(r.parsed).toMatchObject({ isHash: true, batch: false });
     expect(typeof JSON.parse(ok(r, [new Uint8Array(3)])).body.result).toBe("string");
   });
-  it("basics xml → UNSUPPORTED_FORMAT", () => {
-    const r = parseFrame(basics({ format: "xml", data: "<a/>" }));
+  it("basics raw → UNSUPPORTED_FORMAT", () => {
+    const r = parseFrame(basics({ format: "raw", data: "aGk=" }));
     expect(r.parsed.kind).toBe("unsupported");
     expect(JSON.parse(fail(r, "UNSUPPORTED_FORMAT", "xml"))).toMatchObject({ status: false, code: "UNSUPPORTED_FORMAT", body: {} });
   });
-  it("signXml → method.not.supported", () => {
-    const r = parseFrame(common("signXml", ["PKCS12", "SIGNATURE", "<a/>", "", ""]));
+  it("createCAdESFromFile → method.not.supported", () => {
+    const r = parseFrame(common("createCAdESFromFile", ["PKCS12", "SIGNATURE", "/tmp/x", true]));
     expect(r.parsed.kind).toBe("unsupported");
     expect(JSON.parse(fail(r, "500", "method.not.supported"))).toEqual({ code: "500", message: "method.not.supported" });
   });
@@ -81,5 +81,28 @@ describe("basics: decode=false — данные обычным текстом", 
   it("decode по умолчанию — base64", () => {
     const r = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "cms", data: "aGk=", signingParams: {} } }));
     expect(r.parsed).toMatchObject({ data: [new TextEncoder().encode("hi")] });
+  });
+});
+
+describe("XML-подпись в протоколе", () => {
+  const xml = "<login><timeTicket>1</timeTicket></login>";
+  it("basics sign format=xml: данные — строка XML, результат — подписанный XML (не PEM)", () => {
+    const r = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "xml", data: xml, signingParams: {}, signerParams: { extKeyUsageOids: ["1.3.6.1.5.5.7.3.2"] } } }));
+    expect(r.parsed).toMatchObject({ kind: "sign", format: "xml", batch: false, data: [new TextEncoder().encode(xml)] });
+    expect(JSON.parse(ok(r, ["<signed/>"]))).toEqual({ status: true, body: { result: "<signed/>" } });
+  });
+  it("basics xml пачкой → массив", () => {
+    const r = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "xml", data: [xml, xml] } }));
+    expect(JSON.parse(ok(r, ["<a/>", "<b/>"])).body.result).toEqual(["<a/>", "<b/>"]);
+  });
+  it("commonUtils signXml / signXmls", () => {
+    const one = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.commonUtils", method: "signXml", args: ["PKCS12", "AUTHENTICATION", xml, "", ""] }));
+    expect(one.parsed).toMatchObject({ kind: "sign", format: "xml" });
+    expect(JSON.parse(ok(one, ["<s/>"]))).toEqual({ code: "200", responseObject: "<s/>" });
+    const many = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.commonUtils", method: "signXmls", args: ["PKCS12", "SIGNATURE", [xml, xml], "", ""] }));
+    expect(JSON.parse(ok(many, ["<a/>", "<b/>"]))).toEqual({ code: "200", responseObject: ["<a/>", "<b/>"] });
+  });
+  it("XML не строкой → invalid", () => {
+    expect(parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "xml", data: 5 } })).parsed.kind).toBe("invalid");
   });
 });

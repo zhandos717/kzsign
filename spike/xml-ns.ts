@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { DOMParser } from "@xmldom/xmldom";
-import { C14nCanonicalization, C14nCanonicalizationWithComments } from "xml-crypto/lib/c14n-canonicalization";
+import { C14nCanonicalization, C14nCanonicalizationWithComments } from "xml-crypto/lib/c14n-canonicalization.js";
 import { gost } from "../src/core/crypto/gost";
 
 const DS = "http://www.w3.org/2000/09/xmldsig#";

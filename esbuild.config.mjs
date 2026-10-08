@@ -4,7 +4,7 @@ import { cpSync, mkdirSync, rmSync } from "node:fs";
 rmSync("dist", { recursive: true, force: true });
 mkdirSync("dist");
 
-const common = { bundle: true, platform: "browser", target: "chrome120", logLevel: "warning", legalComments: "none" };
+const common = { bundle: true, platform: "browser", target: "chrome120", logLevel: "warning", legalComments: "none", alias: { crypto: "./src/shims/empty.ts" } };
 
 await Promise.all([
   ...["shim", "bridge", "confirm", "popup"].map((name) =>

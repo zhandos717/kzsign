@@ -1,5 +1,5 @@
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { C14nCanonicalization, C14nCanonicalizationWithComments } from "xml-crypto/lib/c14n-canonicalization";
+import { C14nCanonicalization, C14nCanonicalizationWithComments } from "xml-crypto/lib/c14n-canonicalization.js";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import type { ParsedP12 } from "./p12";

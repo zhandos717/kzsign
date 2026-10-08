@@ -89,7 +89,7 @@ describe("handler (режим extension)", () => {
   it("неподдерживаемое и мусор — ошибки протокола без окна", async () => {
     const confirm: ConfirmLike = { ask: vi.fn() };
     const { h } = session(confirm);
-    expect(JSON.parse((await h.onFrame(common("signXml", ["PKCS12", "SIGNATURE", "<a/>", "", ""])))!)).toEqual({ code: "500", message: "method.not.supported" });
+    expect(JSON.parse((await h.onFrame(common("createCAdESFromFile", ["PKCS12", "SIGNATURE", "/tmp/x", true])))!)).toEqual({ code: "500", message: "method.not.supported" });
     expect(JSON.parse((await h.onFrame("garbage"))!)).toMatchObject({ code: "500" });
     expect(confirm.ask).not.toHaveBeenCalled();
   });
@@ -183,4 +183,22 @@ it("firstVisit: незнакомый сайт помечается, знаком
   const calls = (confirm.ask as ReturnType<typeof vi.fn>).mock.calls;
   expect(calls[0]![0].firstVisit).toBe(true);
   expect(calls[1]![0].firstVisit).toBe(false);
+});
+
+describe("XML-подпись в обработчике", () => {
+  const xml = "<login><timeTicket>1700000000</timeTicket></login>";
+  it("signXml (commonUtils) → подписанный XML, проверяется; окно знает формат", async () => {
+    const { verifyXml } = await import("../../src/core/xmldsig");
+    const confirm: ConfirmLike = { ask: vi.fn(async (_req, verify) => verify(keyId, FIXTURE_PASSWORD)) };
+    const res = JSON.parse((await session(confirm).h.onFrame(common("signXml", ["PKCS12", "AUTHENTICATION", xml, "", ""])))!);
+    expect(res.code).toBe("200");
+    expect((await verifyXml(res.responseObject)).valid).toBe(true);
+    const req = (confirm.ask as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(req).toMatchObject({ format: "xml", items: [{ preview: { text: xml } }] });
+  });
+
+  it("basics xml с DOCTYPE → ошибка MALFORMED_XML, не падение", async () => {
+    const frame = JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "xml", data: '<!DOCTYPE a [<!ENTITY e "x">]><a>&e;</a>' } });
+    expect(JSON.parse((await session(approve).h.onFrame(frame))!)).toMatchObject({ status: false, code: "SIGN_ERROR", message: "MALFORMED_XML" });
+  });
 });

@@ -3,6 +3,8 @@ import { createServer, type Server } from "node:http";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { verifyCms } from "../../src/core/signer";
+import { verifyXml } from "../../src/core/xmldsig";
+import { writeFileSync } from "node:fs";
 
 const DIST = resolve("dist");
 const KEY = resolve("test/fixtures/nca/ncanode-go-official/individual/valid/individual_valid.p12");
@@ -275,5 +277,27 @@ test("сайт на ncalayer-js-client: connect + basicsSignCMS (как на г�
   expect(version).toBe("1.4");
   const der = new Uint8Array(Buffer.from(String(cms).replace(/-----[A-Z ]+-----|\s/g, ""), "base64"));
   expect((await verifyCms(der)).valid).toBe(true);
+  await page.close();
+});
+
+test("вход как на egov: ncalayer-js-client basicsSignXML → подписанный XML", async () => {
+  const page = await ctx.newPage();
+  await page.goto(base + "client");
+  const result = page.evaluate(async () => {
+    const { NCALayerClient } = window as any;
+    const client = new NCALayerClient();
+    await client.connect();
+    return client.basicsSignXML(NCALayerClient.basicsStorageAll, "<login><timeTicket>1700000000</timeTicket></login>", NCALayerClient.basicsXMLParams, NCALayerClient.basicsSignerAuthAny ?? NCALayerClient.basicsSignerAny);
+  });
+  const confirm = await confirmFrame(page);
+  await expect(confirm.getByText("XML-подпись")).toBeVisible();
+  await expect(confirm.locator(".preview")).toContainText("<timeTicket>1700000000</timeTicket>");
+  const pw = confirm.locator("input[type=password]");
+  if (await pw.isVisible()) await pw.fill(PASSWORD);
+  await confirm.getByRole("button", { name: "Подписать" }).click();
+  const signed = String(await result);
+  writeFileSync("out/e2e-login.signed.xml", signed);
+  expect(signed).toContain("gostr34102015-gostr34112015-512");
+  expect((await verifyXml(signed)).valid).toBe(true);
   await page.close();
 });

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { DOMParser } from "@xmldom/xmldom";
-import { C14nCanonicalization, C14nCanonicalizationWithComments } from "xml-crypto/lib/c14n-canonicalization";
-import { EnvelopedSignature } from "xml-crypto/lib/enveloped-signature";
+import { C14nCanonicalization, C14nCanonicalizationWithComments } from "xml-crypto/lib/c14n-canonicalization.js";
+import { EnvelopedSignature } from "xml-crypto/lib/enveloped-signature.js";
 import { gost } from "../src/core/crypto/gost";
 
 const raw = readFileSync("/tmp/claude-501/ref.xml", "utf8").split("\n").slice(1).join("\n");

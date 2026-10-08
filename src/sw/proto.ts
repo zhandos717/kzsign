@@ -1,4 +1,4 @@
-export type SignRequest = { kind: "sign"; data: Uint8Array[]; detached: boolean; isHash: boolean; batch: boolean };
+export type SignRequest = { kind: "sign"; format: "cms" | "xml"; data: Uint8Array[]; detached: boolean; isHash: boolean; batch: boolean };
 export type Parsed =
   | { kind: "heartbeat"; reply: string }
   | { kind: "tokens" }
@@ -18,7 +18,7 @@ export const HELLO = '{"result":{"version":"1.4"}}';
 
 const COMMON = "kz.gov.pki.knca.commonUtils";
 const BASICS = "kz.gov.pki.knca.basics";
-const UNSUPPORTED_COMMON = new Set(["signXml", "signXmls", "createCAdESFromFile", "signXmlByElementId", "getKeys", "loadSlotList"]);
+const UNSUPPORTED_COMMON = new Set(["createCAdESFromFile", "signXmlByElementId", "getKeys", "loadSlotList"]);
 
 const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
@@ -45,9 +45,18 @@ const isTrue = (v: unknown) => v === true || v === "true";
 
 const invalid = (dialect: Dialect, reason: string): Request => ({ dialect, parsed: { kind: "invalid", reason }, tsa: false });
 
+const xmlBytes = (x: unknown) => (typeof x === "string" && x.trim() ? new TextEncoder().encode(x) : null);
+
 function parseCommon(method: string, args: unknown): Request {
   const req = (parsed: Parsed): Request => ({ dialect: "common", parsed, tsa: false });
   if (method === "getActiveTokens") return req({ kind: "tokens" });
+  if (method === "signXml" || method === "signXmls") {
+    if (!Array.isArray(args) || args.length < 3) return invalid("common", "args");
+    const items = method === "signXmls" ? (Array.isArray(args[2]) ? args[2] : null) : [args[2]];
+    const data = items?.map(xmlBytes);
+    if (!data?.length || data.some((d) => !d)) return invalid("common", "xml");
+    return req({ kind: "sign", format: "xml", data: data as Uint8Array[], isHash: false, detached: false, batch: method === "signXmls" });
+  }
   if (method === "getKeyInfo") return req({ kind: "keyInfo" });
   if (UNSUPPORTED_COMMON.has(method)) return req({ kind: "unsupported", reason: method });
   const sign = { createCAdESFromBase64: false, createCMSSignatureFromBase64: false, createCAdESFromBase64Hash: true } as Record<string, boolean>;
@@ -56,7 +65,7 @@ function parseCommon(method: string, args: unknown): Request {
   const data = fromBase64(args[2]);
   if (!data) return invalid("common", "base64");
   const isHash = sign[method]!;
-  return req({ kind: "sign", data: [data], isHash, detached: isHash || isFalse(args[3]), batch: false });
+  return req({ kind: "sign", format: "cms", data: [data], isHash, detached: isHash || isFalse(args[3]), batch: false });
 }
 
 function parseBasics(method: string, args: unknown): Request {
@@ -64,16 +73,21 @@ function parseBasics(method: string, args: unknown): Request {
   if (!args || typeof args !== "object") return invalid("basics", "args");
   const a = args as { format?: unknown; data?: unknown; signingParams?: Record<string, unknown> };
   const format = a.format ?? "cms";
-  if (format !== "cms") return { dialect: "basics", parsed: { kind: "unsupported", reason: String(format) }, tsa: false };
+  if (format !== "cms" && format !== "xml") return { dialect: "basics", parsed: { kind: "unsupported", reason: String(format) }, tsa: false };
   const items = Array.isArray(a.data) ? a.data : [a.data];
   const sp = a.signingParams ?? {};
+  if (format === "xml") {
+    const data = items.map(xmlBytes);
+    if (!data.length || data.some((d) => !d)) return invalid("basics", "xml");
+    return { dialect: "basics", parsed: { kind: "sign", format: "xml", data: data as Uint8Array[], isHash: false, detached: false, batch: Array.isArray(a.data) }, tsa: false };
+  }
   const decode = isFalse(sp.decode) ? (s: unknown) => (typeof s === "string" ? new TextEncoder().encode(s) : null) : fromBase64;
   const data = items.map(decode);
   if (!data.length || data.some((d) => !d)) return invalid("basics", "base64");
   const isHash = isTrue(sp.digested);
   return {
     dialect: "basics",
-    parsed: { kind: "sign", data: data as Uint8Array[], isHash, detached: isHash || isFalse(sp.encapsulate), batch: Array.isArray(a.data) },
+    parsed: { kind: "sign", format: "cms", data: data as Uint8Array[], isHash, detached: isHash || isFalse(sp.encapsulate), batch: Array.isArray(a.data) },
     tsa: typeof sp.tsaProfile === "object" && sp.tsaProfile !== null,
   };
 }
@@ -97,6 +111,11 @@ export function parseFrame(text: string): Request {
 
 export function ok(req: Request, value: unknown): string {
   if (req.parsed.kind === "heartbeat") return req.parsed.reply;
+  if (req.parsed.kind === "sign" && req.parsed.format === "xml") {
+    const xmls = value as string[];
+    const out = req.parsed.batch ? xmls : xmls[0];
+    return req.dialect === "common" ? JSON.stringify({ code: "200", responseObject: out }) : JSON.stringify({ status: true, body: { result: out } });
+  }
   if (req.parsed.kind === "sign") {
     const cms = value as Uint8Array[];
     if (req.dialect === "common") return JSON.stringify({ code: "200", responseObject: toBase64(cms[0]!) });

@@ -17,6 +17,7 @@ export interface ConfirmRequest {
   isHash: boolean;
   /** сайт не отмечен пользователем как знакомый */
   firstVisit?: boolean;
+  format?: "cms" | "xml";
 }
 export type Answer = { keyId: string; password?: string; trustSite?: boolean } | { cancel: true };
 export type AnswerResult = { ok: true } | { ok: false; code: ErrorCode | "INTERNAL" | "BUSY"; retryAfterSec?: number };
