@@ -22,6 +22,8 @@
     "vitest": "^2.1.9"
   },
   "dependencies": {
+    "@li0ard/gostcurves": "^0.1.6",
+    "@li0ard/streebog": "^0.2.6",
     "asn1js": "^3.0.10",
     "node-forge": "^1.4.0",
     "pkijs": "^3.4.1"
