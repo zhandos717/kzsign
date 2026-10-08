@@ -29,7 +29,7 @@ function requesterCard(req: ConfirmRequest) {
         el("div", { className: "origin" }, el("span", { className: "dim", textContent: `${h.scheme}://${h.prefix}` }), el("strong", { textContent: h.site }), h.port && el("span", { className: "dim", textContent: `:${h.port}` })),
         secure ? el("div", { className: "secure" }, icon("lock"), h.scheme === "https" ? "Защищённое соединение" : "Локальная разработка") : null)),
     !secure && el("div", { className: "note warn", style: "margin-top:10px", textContent: "Соединение не защищено (http). Подписывайте, только если уверены в сайте." }),
-    el("p", { className: "muted small", style: "margin:10px 0 0", textContent: "Проверьте адрес: подписывайте, только если вы сами начали это действие на этом сайте." }));
+    el("p", { className: "muted hint", textContent: "Подписывайте, только если сами начали это действие на этом сайте." }));
 }
 
 function documentCard(req: ConfirmRequest) {
@@ -65,7 +65,7 @@ async function main() {
 
   if (!keys.length) {
     cards.push(el("div", { className: "note warn", textContent: "В KZSign нет ключей. Откройте меню расширения, добавьте ключ .p12 и повторите действие на сайте." }));
-    app.replaceChildren(el("div", { className: "page" }, topbar("Подтверждение"), el("div", { className: "content" }, ...cards), el("div", { className: "footer" }, cancel)));
+    app.replaceChildren(el("div", { className: "page confirm" }, topbar("Подтверждение"), el("div", { className: "content" }, ...cards), el("div", { className: "footer" }, cancel)));
     return;
   }
 
@@ -78,18 +78,18 @@ async function main() {
         el("b", { textContent: k.alias }),
         el("span", { className: "meta small muted" }, [k.iin && `ИИН ${k.iin}`, k.bin && `БИН ${k.bin}`].filter(Boolean).join(" · ") + " ", el("span", { className: `badge ${v.tone}`, textContent: v.label })))));
   });
-  const password = el("input", { className: "input", type: "password", name: "password", autocomplete: "off", required: true });
+  const password = el("input", { className: "input", type: "password", name: "password", autocomplete: "off", required: true, placeholder: "Пароль ключа", "aria-label": "Пароль ключа" });
   const status = el("p", { className: "error", role: "alert" });
   const submit = el("button", { type: "submit", className: "btn", textContent: req.operation === "sign" ? "Подписать" : "Разрешить" });
-  const form = el("form", { className: "page" },
+  const form = el("form", { className: "page confirm" },
     topbar("Подтверждение"),
     el("div", { className: "content" }, ...cards,
       keys.length > 1 && el("section", { className: "card" }, el("h2", { textContent: "Подписать ключом" }), pick)),
     el("div", { className: "footer stack" },
       keys.length === 1 && el("div", { className: "keyline" }, pick),
-      el("label", { className: "field" }, el("span", { textContent: "Пароль ключа" }), password),
+      el("div", { className: "pw" }, password, submit),
       status,
-      el("div", { className: "actions" }, cancel, submit)));
+      el("div", { className: "actions" }, cancel)));
   armAfterFocus(submit, window);
   form.onsubmit = async (e) => {
     e.preventDefault();

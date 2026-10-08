@@ -29,7 +29,7 @@ for (const scheme of ["light", "dark"] as const) {
     const c = ctx.waitForEvent("page", (x) => x.url().includes("confirm.html"));
     void page.evaluate(() => (window as any).ncaCall({ module: "kz.gov.pki.knca.commonUtils", method: "createCAdESFromBase64", args: ["PKCS12", "SIGNATURE", btoa(unescape(encodeURIComponent("ДОГОВОР ПОСТАВКИ № 17\nг. Алматы, 08.10.2026\n\nТОО «Поставщик» и ТОО «Покупатель» заключили настоящий договор о нижеследующем:\n1. Предмет договора — поставка оборудования.\n2. Сумма — 1 250 000 тенге."))), true] })).catch(() => {});
     const cp = await c;
-    await cp.setViewportSize({ width: 540, height: 680 });
+    await cp.setViewportSize({ width: 400, height: 600 });
     await cp.waitForTimeout(1300);
     await cp.screenshot({ path: `out/confirm-${scheme}.png` });
     await ctx.close();
