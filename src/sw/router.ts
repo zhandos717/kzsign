@@ -27,8 +27,8 @@ type Frame = { kind: "send"; text: string } | { kind: "close" };
 const isFrame = (m: unknown): m is Frame =>
   !!m && typeof m === "object" && (((m as Frame).kind === "send" && typeof (m as { text?: unknown }).text === "string") || (m as Frame).kind === "close");
 
-export function attachRouter(onConnect: chrome.runtime.ExtensionConnectEvent, factory: SessionFactory): void {
-  onConnect.addListener((port) => {
+export function attachRouter(onConnect: Pick<typeof chrome.runtime.onConnect, "addListener">, factory: SessionFactory): void {
+  onConnect.addListener((port: chrome.runtime.Port) => {
     if (port.name !== PORT_NAME) return;
     const origin = port.sender ? originOf(port.sender) : null;
     if (!origin) {
