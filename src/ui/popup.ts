@@ -1,14 +1,9 @@
 import type { KeyMeta } from "../sw/keystore";
 import type { Mode } from "../sw/policy";
+import { el, icon, topbar, initials, validity, fileDrop } from "./dom";
 
-const app = document.getElementById("app")!;
-const send = <T>(msg: object) => chrome.runtime.sendMessage(msg) as Promise<T & { error?: string; retryAfterSec?: number }>;
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: (Node | string)[]): HTMLElementTagNameMap[K] {
-  const e = Object.assign(document.createElement(tag), props);
-  e.append(...children);
-  return e;
-}
+type Reply<T> = T & { error?: string; retryAfterSec?: number };
+const send = <T>(msg: object) => chrome.runtime.sendMessage(msg) as Promise<Reply<T>>;
 
 const ERRORS: Record<string, string> = {
   BAD_PASSWORD: "Неверный пароль",
@@ -19,6 +14,12 @@ const ERRORS: Record<string, string> = {
 };
 const errorText = (r: { error?: string; retryAfterSec?: number }) => (ERRORS[r.error ?? ""] ?? r.error ?? "").replace("{s}", String(r.retryAfterSec ?? ""));
 
+const MODES: { value: Mode; title: string; text: string }[] = [
+  { value: "auto", title: "Авто", text: "Подписывает KZSign, если в нём есть ключи; иначе — установленный NCALayer." },
+  { value: "extension", title: "Только KZSign", text: "Настоящий NCALayer не используется." },
+  { value: "native", title: "Только NCALayer", text: "Все запросы уходят в установленный NCALayer." },
+];
+
 async function fileToB64(f: File): Promise<string> {
   const b = new Uint8Array(await f.arrayBuffer());
   let s = "";
@@ -26,72 +27,119 @@ async function fileToB64(f: File): Promise<string> {
   return btoa(s);
 }
 
+const app = document.getElementById("app")!;
+let tab: "keys" | "sign" | "settings" = "keys";
+
 async function render() {
-  app.replaceChildren(el("h1", { textContent: "KZSign" }));
-  const { keys = [] } = await send<{ keys: KeyMeta[] }>({ type: "keys.list" });
-  const { mode = "auto" } = await send<{ mode: Mode }>({ type: "mode.get" });
-
-  const table = el("table");
-  if (!keys.length) table.append(el("tr", {}, el("td", { className: "dim", textContent: "Ключей пока нет" })));
-  for (const k of keys) {
-    const del = el("button", { type: "button", className: "secondary", textContent: "Удалить" });
-    del.onclick = async () => {
-      if (!confirm(`Удалить ключ «${k.alias}» из расширения?`)) return;
-      await send({ type: "keys.remove", id: k.id });
-      void render();
-    };
-    const who = [k.iin && `ИИН ${k.iin}`, k.bin && `БИН ${k.bin}`].filter(Boolean).join(" · ");
-    table.append(el("tr", {}, el("td", {}, el("strong", { textContent: k.alias }), el("div", { className: "dim", textContent: `${who} · до ${k.notAfter.slice(0, 10)} · ${k.algorithm === "RSA" ? "RSA" : "ГОСТ"}` })), el("td", {}, del)));
+  const [{ keys = [] }, { mode = "auto" }] = await Promise.all([send<{ keys: KeyMeta[] }>({ type: "keys.list" }), send<{ mode: Mode }>({ type: "mode.get" })]);
+  const tabs = el("nav", { className: "tabs", role: "tablist" });
+  for (const [id, label] of [["keys", "Ключи"], ["sign", "Подпись"], ["settings", "Настройки"]] as const) {
+    tabs.append(el("button", { type: "button", role: "tab", "aria-selected": String(tab === id), textContent: label, onclick: () => { tab = id; void render(); } }));
   }
+  const body = tab === "keys" ? keysTab(keys) : tab === "sign" ? signTab(keys) : settingsTab(mode);
+  app.replaceChildren(topbar(MODES.find((m) => m.value === mode)!.title), tabs, el("div", { className: "content" }, ...body));
+}
 
-  const file = el("input", { type: "file", accept: ".p12,.pfx" });
-  const pass = el("input", { type: "password", autocomplete: "off", placeholder: "Пароль ключа" });
-  const alias = el("input", { type: "text", placeholder: "Название (необязательно)" });
-  const status = el("p", { className: "error" });
-  const add = el("form", {}, el("h2", { textContent: "Добавить ключ" }), file, pass, alias, status, el("div", { className: "actions" }, el("button", { type: "submit", textContent: "Добавить" })));
-  add.onsubmit = async (e) => {
+function keyCard(k: KeyMeta) {
+  const v = validity(k.notAfter);
+  const del = el("button", { type: "button", className: "icon-btn", title: "Удалить ключ", "aria-label": `Удалить ключ ${k.alias}` }, icon("trash"));
+  del.onclick = async () => {
+    if (!confirm(`Удалить ключ «${k.alias}» из KZSign?\nФайл .p12 на диске останется.`)) return;
+    await send({ type: "keys.remove", id: k.id });
+    void render();
+  };
+  return el("div", { className: "key" },
+    el("div", { className: "avatar", textContent: initials(k.subjectCn) }),
+    el("div", {},
+      el("div", { className: "name", textContent: k.alias, title: k.subjectCn }),
+      el("div", { className: "meta" },
+        k.iin && el("span", { textContent: `ИИН ${k.iin}` }),
+        k.bin && el("span", { textContent: `БИН ${k.bin}` }),
+        el("span", { className: `badge ${v.tone}`, textContent: v.label }),
+        el("span", { className: "badge", textContent: k.algorithm === "RSA" ? "RSA" : "ГОСТ" }))),
+    del);
+}
+
+function keysTab(keys: KeyMeta[]) {
+  const list = keys.length
+    ? el("div", { className: "keys" }, ...keys.map(keyCard))
+    : el("div", { className: "empty" }, icon("key"), el("p", { textContent: "Ключей пока нет. Добавьте файл .p12 от НУЦ РК." }));
+
+  const drop = fileDrop("Файл ключа .p12", ".p12,.pfx");
+  const pass = el("input", { className: "input", type: "password", autocomplete: "off" });
+  const alias = el("input", { className: "input", type: "text", placeholder: "Например: Рабочий" });
+  const status = el("p", { className: "error", role: "alert" });
+  const submit = el("button", { type: "submit", className: "btn block", textContent: "Добавить" });
+  const form = el("form", { className: "card" },
+    el("h2", { textContent: "Добавить ключ" }),
+    el("div", { style: "display:grid;gap:10px" }, drop.root,
+      el("label", { className: "field" }, el("span", { textContent: "Пароль ключа" }), pass),
+      el("label", { className: "field" }, el("span", { textContent: "Название (необязательно)" }), alias),
+      status, submit),
+    el("p", { className: "muted small", textContent: "Ключ хранится в браузере в зашифрованном виде. Пароль не сохраняется." }));
+  form.onsubmit = async (e) => {
     e.preventDefault();
-    const f = file.files?.[0];
-    if (!f) return void (status.textContent = "Выберите файл");
-    status.textContent = "Проверяю…";
+    const f = drop.input.files?.[0];
+    if (!f) return void (status.textContent = "Выберите файл ключа");
+    submit.disabled = true;
+    submit.textContent = "Проверяю…";
     const r = await send({ type: "keys.import", file: await fileToB64(f), password: pass.value, alias: alias.value });
     pass.value = "";
+    submit.disabled = false;
+    submit.textContent = "Добавить";
     if (r.error) return void (status.textContent = errorText(r));
     void render();
   };
-
-  const modeSel = el("select");
-  for (const [v, t] of [["auto", "Авто: свои ключи, иначе NCALayer"], ["extension", "Только расширение"], ["native", "Только настоящий NCALayer"]] as const) {
-    modeSel.append(el("option", { value: v, textContent: t, selected: v === mode }));
-  }
-  modeSel.onchange = () => void send({ type: "mode.set", mode: modeSel.value });
-
-  app.append(table, add, el("h2", { textContent: "Режим" }), modeSel);
-  if (keys.length) app.append(signFileForm(keys));
+  return [el("section", { className: "card" }, el("h2", { textContent: "Мои ключи" }), list), form];
 }
 
-function signFileForm(keys: KeyMeta[]) {
-  const file = el("input", { type: "file" });
-  const keySel = el("select");
-  for (const k of keys) keySel.append(el("option", { value: k.id, textContent: k.alias }));
-  const pass = el("input", { type: "password", autocomplete: "off", placeholder: "Пароль ключа" });
+function signTab(keys: KeyMeta[]) {
+  if (!keys.length) return [el("div", { className: "card empty" }, icon("key"), el("p", { textContent: "Сначала добавьте ключ на вкладке «Ключи»." }))];
+  const drop = fileDrop("Файл для подписи");
+  const keySel = el("select", { className: "input" }, ...keys.map((k) => el("option", { value: k.id, textContent: `${k.alias}${k.iin ? " · ИИН " + k.iin : ""}` })));
+  const pass = el("input", { className: "input", type: "password", autocomplete: "off" });
   const detached = el("input", { type: "checkbox" });
-  const status = el("p", { className: "error" });
-  const form = el("form", {}, el("h2", { textContent: "Подписать файл" }), file, keySel, pass, el("label", {}, detached, " Открепленная подпись (без файла внутри)"), status, el("div", { className: "actions" }, el("button", { type: "submit", textContent: "Подписать" })));
+  const status = el("p", { className: "error", role: "alert" });
+  const done = el("div");
+  const submit = el("button", { type: "submit", className: "btn block", textContent: "Подписать" });
+  const form = el("form", { className: "card" },
+    el("h2", { textContent: "Подписать файл" }),
+    el("div", { style: "display:grid;gap:10px" }, drop.root,
+      el("label", { className: "field" }, el("span", { textContent: "Ключ" }), keySel),
+      el("label", { className: "field" }, el("span", { textContent: "Пароль ключа" }), pass),
+      el("label", { className: "check" }, detached, "Открепленная подпись (файл не включается в .cms)"),
+      status, done, submit));
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const f = file.files?.[0];
+    done.replaceChildren();
+    const f = drop.input.files?.[0];
     if (!f) return void (status.textContent = "Выберите файл");
-    status.textContent = "Подписываю…";
+    status.textContent = "";
+    submit.disabled = true;
+    submit.textContent = "Подписываю…";
     const r = await send<{ cms: string }>({ type: "file.sign", keyId: keySel.value, password: pass.value, file: await fileToB64(f), detached: detached.checked });
     pass.value = "";
+    submit.disabled = false;
+    submit.textContent = "Подписать";
     if (r.error) return void (status.textContent = errorText(r));
     const bytes = Uint8Array.from(atob(r.cms), (c) => c.charCodeAt(0));
-    const a = el("a", { href: URL.createObjectURL(new Blob([bytes], { type: "application/pkcs7-signature" })), download: `${f.name}.cms` });
-    a.click();
-    status.textContent = "Готово";
+    el("a", { href: URL.createObjectURL(new Blob([bytes], { type: "application/pkcs7-signature" })), download: `${f.name}.cms` }).click();
+    done.replaceChildren(el("div", { className: "note ok", textContent: `Готово: ${f.name}.cms сохранён в «Загрузки»` }));
   };
-  return form;
+  return [form];
+}
+
+function settingsTab(mode: Mode) {
+  const options = el("div", { className: "options", role: "radiogroup" });
+  for (const m of MODES) {
+    const input = el("input", { type: "radio", name: "mode", value: m.value, checked: m.value === mode });
+    input.onchange = async () => { await send({ type: "mode.set", mode: m.value }); void render(); };
+    options.append(el("label", { className: "option" }, input, el("span", {}, el("b", { textContent: m.title }), el("span", { className: "muted small", textContent: m.text }))));
+  }
+  return [
+    el("section", { className: "card" }, el("h2", { textContent: "Кто подписывает" }), options),
+    el("section", { className: "card small muted" }, el("p", { style: "margin:0", textContent: "KZSign отвечает сайтам вместо NCALayer. Каждая подпись подтверждается в отдельном окне расширения — сайт не может подписать без вашего пароля." })),
+  ];
 }
 
 void render();

@@ -23,10 +23,10 @@ test.beforeAll(async () => {
 
   const popup = await ctx.newPage();
   await popup.goto(`chrome-extension://${extId}/popup.html`);
-  await popup.locator('form:has(h2:text("Добавить ключ")) input[type=file]').setInputFiles(KEY);
-  await popup.locator('form:has(h2:text("Добавить ключ")) input[type=password]').fill(PASSWORD);
+  await popup.locator("input[type=file]").setInputFiles(KEY);
+  await popup.locator("input[type=password]").fill(PASSWORD);
   await popup.getByRole("button", { name: "Добавить" }).click();
-  await expect(popup.getByText("до 20")).toBeVisible({ timeout: 30_000 });
+  await expect(popup.locator(".key")).toHaveCount(1, { timeout: 30_000 });
   await popup.close();
 });
 
