@@ -30,7 +30,7 @@ describe("parseFrame", () => {
     expect(parseFrame(common("createCAdESFromBase64Hash", ["PKCS12", "SIGNATURE", "aGk="])).parsed).toMatchObject({ kind: "sign", isHash: true, detached: true });
   });
   it("basics sign пачкой, detached, ответ PEM", () => {
-    const r = parseFrame(basics({ format: "cms", data: ["aGk=", "aGk="], signingParams: { encapsulate: "false" } }));
+    const r = parseFrame(basics({ format: "cms", data: ["aGk=", "aGk="], signingParams: { decode: true, encapsulate: "false" } }));
     expect(r.parsed).toEqual({ kind: "sign", format: "cms", data: [hi, hi], detached: true, isHash: false, batch: true });
     const res = JSON.parse(ok(r, [new Uint8Array(100), new Uint8Array(1)]));
     expect(res.status).toBe(true);
@@ -78,9 +78,13 @@ describe("basics: decode=false — данные обычным текстом", 
     const r = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "cms", data: "Привет, мир", signingParams: { decode: false } } }));
     expect(r.parsed).toMatchObject({ kind: "sign", data: [new TextEncoder().encode("Привет, мир")] });
   });
-  it("decode по умолчанию — base64", () => {
-    const r = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "cms", data: "aGk=", signingParams: {} } }));
+  it("decode=true — base64", () => {
+    const r = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "cms", data: "aGk=", signingParams: { decode: true } } }));
     expect(r.parsed).toMatchObject({ data: [new TextEncoder().encode("hi")] });
+  });
+  it("без decode строка подписывается как текст (токен сайта)", () => {
+    const r = parseFrame(JSON.stringify({ module: "kz.gov.pki.knca.basics", method: "sign", args: { format: "cms", data: "TNuRN5sGabcdefghijklmnopqrstuvwx", signingParams: {} } }));
+    expect(r.parsed).toMatchObject({ data: [new TextEncoder().encode("TNuRN5sGabcdefghijklmnopqrstuvwx")] });
   });
 });
 

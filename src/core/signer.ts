@@ -91,6 +91,8 @@ export async function signCms(data: Uint8Array, key: ParsedP12, opts: SignOption
     signerInfos: [signerInfo],
   });
 
+  if (!opts.detached && data.length) signedData.encapContentInfo.eContent = new asn1js.OctetString({ valueHex: data });
+
   const ci = new pkijs.ContentInfo({ contentType: OID_SIGNED_DATA, content: signedData.toSchema(true) });
   return new Uint8Array(ci.toSchema().toBER(false));
 }

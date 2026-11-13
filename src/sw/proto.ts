@@ -81,7 +81,7 @@ function parseBasics(method: string, args: unknown): Request {
     if (!data.length || data.some((d) => !d)) return invalid("basics", "xml");
     return { dialect: "basics", parsed: { kind: "sign", format: "xml", data: data as Uint8Array[], isHash: false, detached: false, batch: Array.isArray(a.data) }, tsa: false };
   }
-  const decode = isFalse(sp.decode) ? (s: unknown) => (typeof s === "string" ? new TextEncoder().encode(s) : null) : fromBase64;
+  const decode = isTrue(sp.decode) ? fromBase64 : (s: unknown) => (typeof s === "string" ? new TextEncoder().encode(s) : null);
   const data = items.map(decode);
   if (!data.length || data.some((d) => !d)) return invalid("basics", "base64");
   const isHash = isTrue(sp.digested);

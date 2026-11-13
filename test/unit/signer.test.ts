@@ -17,6 +17,12 @@ describe.each(Object.entries(keys))("signCms %s", (_, key) => {
     expect(r.signerCertDer).toEqual(key.certificateDer);
     expect(Buffer.from(cms).includes(Buffer.from(data))).toBe(true);
   });
+  it("attached: данные лежат простым OCTET STRING, как у NCALayer", async () => {
+    const cms = Buffer.from(await signCms(data, key, { detached: false }));
+    const at = cms.indexOf(Buffer.from(data));
+    expect(cms[at - 2]).toBe(0x04);
+    expect(cms[at - 1]).toBe(data.length);
+  });
   it("detached: без данных внутри, проверяется с внешними данными", async () => {
     const cms = await signCms(data, key, { detached: true });
     expect(Buffer.from(cms).includes(Buffer.from(data))).toBe(false);
